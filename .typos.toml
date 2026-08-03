@@ -1,0 +1,11 @@
+# typos (spell checker) configuration
+
+[files]
+# ignore these files
+
+[default]
+extend-ignore-identifiers-re = []
+
+[default.extend-identifiers]
+# overrides: if right side of equals is same as left side, no change is made
+aHAX = "aHAX" # rsync arg

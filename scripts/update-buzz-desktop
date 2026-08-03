@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""Update the Buzz CLI and ACP packages to the latest desktop release."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+VERSIONS_PATH = REPO_ROOT / "versions.json"
+COMPONENTS = ("buzz-cli", "buzz-acp")
+TAG_PREFIX = "desktop-v"
+FAKE_HASH = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+HASH_RE = re.compile(r"got:\s*(sha256-[A-Za-z0-9+/=]+)")
+VERSION_RE = re.compile(r"^desktop-v(\d+)\.(\d+)\.(\d+)$")
+
+
+class UpdateError(Exception):
+    """An expected update failure that should be reported without a traceback."""
+
+
+def info(message: str) -> None:
+    print(f"  {message}", file=sys.stderr)
+
+
+def atomic_write(path: Path, data: bytes) -> None:
+    fd, temporary_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f"{path.name}.tmp."
+    )
+    try:
+        with os.fdopen(fd, "wb") as temporary:
+            temporary.write(data)
+        os.replace(temporary_name, path)
+    except BaseException:
+        Path(temporary_name).unlink(missing_ok=True)
+        raise
+
+
+def save_versions(versions: dict[str, object]) -> None:
+    rendered = json.dumps(versions, indent=2).encode() + b"\n"
+    atomic_write(VERSIONS_PATH, rendered)
+
+
+def github_json(owner: str, repo: str, endpoint: str) -> object:
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{owner}/{repo}/{endpoint}",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "buzz-nix-update-buzz-desktop",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.load(response)
+
+
+def stable_desktop_tag(tags: list[str]) -> str | None:
+    candidates = []
+    for tag in tags:
+        match = VERSION_RE.fullmatch(tag)
+        if match:
+            candidates.append((tuple(map(int, match.groups())), tag))
+    return max(candidates)[1] if candidates else None
+
+
+def stable_release_tag(releases: object) -> str | None:
+    if not isinstance(releases, list):
+        return None
+    for release in releases:
+        if not isinstance(release, dict):
+            continue
+        tag = release.get("tag_name", "")
+        if (
+            not release.get("draft")
+            and not release.get("prerelease")
+            and VERSION_RE.fullmatch(tag)
+        ):
+            return tag
+    return None
+
+
+def latest_desktop_tag(owner: str, repo: str) -> str:
+    try:
+        for page in range(1, 11):
+            releases = github_json(
+                owner, repo, f"releases?per_page=100&page={page}"
+            )
+            tag = stable_release_tag(releases)
+            if tag:
+                return tag
+            if not isinstance(releases, list) or len(releases) < 100:
+                break
+    except (OSError, urllib.error.URLError, json.JSONDecodeError) as error:
+        info(f"GitHub releases API unavailable: {error}")
+
+    if shutil.which("git"):
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "ls-remote",
+                    "--refs",
+                    "--tags",
+                    f"https://github.com/{owner}/{repo}.git",
+                    f"refs/tags/{TAG_PREFIX}*",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                tag = stable_desktop_tag(
+                    [line.rsplit("/", 1)[-1] for line in result.stdout.splitlines()]
+                )
+                if tag:
+                    return tag
+        except subprocess.TimeoutExpired:
+            info("git tag lookup timed out")
+
+    try:
+        tag_names = []
+        for page in range(1, 11):
+            tags = github_json(owner, repo, f"tags?per_page=100&page={page}")
+            if not isinstance(tags, list):
+                break
+            tag_names.extend(
+                entry.get("name", "") for entry in tags if isinstance(entry, dict)
+            )
+            if len(tags) < 100:
+                break
+        tag = stable_desktop_tag(tag_names)
+        if tag:
+            return tag
+    except (OSError, urllib.error.URLError, json.JSONDecodeError) as error:
+        info(f"GitHub tags API unavailable: {error}")
+
+    raise UpdateError(f"could not find a stable {TAG_PREFIX}* release for {owner}/{repo}")
+
+
+def nix_build(*attributes: str, capture: bool = False) -> subprocess.CompletedProcess[str]:
+    command = ["nix", "build", "--no-link"]
+    command.extend(f".#{attribute}" for attribute in attributes)
+    return subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        stdout=subprocess.PIPE if capture else None,
+        stderr=subprocess.STDOUT if capture else None,
+        text=True,
+        check=False,
+    )
+
+
+def hash_from_failed_build(label: str) -> str:
+    info(f"computing {label} from the Nix derivation")
+    result = nix_build("buzz-cli", capture=True)
+    output = result.stdout or ""
+    hashes = HASH_RE.findall(output)
+    if result.returncode == 0 or not hashes:
+        print(output, file=sys.stderr, end="")
+        raise UpdateError(f"Nix did not report the expected {label} mismatch")
+    return hashes[-1]
+
+
+def update(tag_override: str | None) -> None:
+    if shutil.which("nix") is None:
+        raise UpdateError("required tool not found: nix")
+
+    original = VERSIONS_PATH.read_bytes()
+    versions = json.loads(original)
+    entries = [versions.get(component) for component in COMPONENTS]
+    if not all(isinstance(entry, dict) for entry in entries):
+        raise UpdateError("versions.json must contain buzz-cli and buzz-acp objects")
+
+    cli = versions["buzz-cli"]
+    acp = versions["buzz-acp"]
+    owner = cli.get("owner")
+    repo = cli.get("repo")
+    if not owner or not repo or (owner, repo) != (acp.get("owner"), acp.get("repo")):
+        raise UpdateError("buzz-cli and buzz-acp must reference the same GitHub repository")
+
+    tag = tag_override or latest_desktop_tag(owner, repo)
+    match = VERSION_RE.fullmatch(tag)
+    if not match:
+        raise UpdateError(f"desktop tag must match {TAG_PREFIX}<major>.<minor>.<patch>: {tag}")
+    version = tag.removeprefix(TAG_PREFIX)
+    previous_version = cli.get("version", "unknown")
+
+    changed = False
+    try:
+        info(f"updating Buzz Desktop {previous_version} -> {version} ({tag})")
+        for component in COMPONENTS:
+            entry = versions[component]
+            entry.update(version=version, rev=tag, sha256=FAKE_HASH)
+        save_versions(versions)
+        changed = True
+
+        source_hash = hash_from_failed_build("source hash")
+        for component in COMPONENTS:
+            entry = versions[component]
+            entry["sha256"] = source_hash
+            entry["cargoHash"] = FAKE_HASH
+        save_versions(versions)
+
+        cargo_hash = hash_from_failed_build("Cargo dependency hash")
+        for component in COMPONENTS:
+            versions[component]["cargoHash"] = cargo_hash
+        save_versions(versions)
+
+        info("building buzz-cli and buzz-acp with their package tests")
+        result = nix_build(*COMPONENTS)
+        if result.returncode != 0:
+            raise UpdateError("final Nix build failed")
+
+        info(f"source hash: {source_hash}")
+        info(f"Cargo hash:  {cargo_hash}")
+        info("update complete")
+    except BaseException:
+        if changed:
+            atomic_write(VERSIONS_PATH, original)
+            info("restored versions.json after the failed update")
+        raise
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Update buzz-cli and buzz-acp to the latest stable desktop-v release, "
+            "refresh their Nix hashes, and build both packages."
+        )
+    )
+    parser.add_argument(
+        "--tag",
+        help="use an explicit desktop-vX.Y.Z tag instead of querying GitHub",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    try:
+        update(parse_args().tag)
+    except UpdateError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("error: interrupted", file=sys.stderr)
+        return 130
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
