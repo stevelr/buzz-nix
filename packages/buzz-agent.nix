@@ -5,7 +5,7 @@
 { callPackage }:
 
 callPackage ./buzz-component.nix {
-  component = "buzz-acp";
-  binary = "buzz-acp";
-  description = "Buzz ACP harness for headless agents";
+  component = "buzz-agent";
+  binary = "buzz-agent";
+  description = "Minimal, unbreakable ACP-compliant LLM agent.";
 }

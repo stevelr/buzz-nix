@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Steve Schoettler
+#
+# SPDX-License-Identifier: Apache-2.0
+
 { self }:
 {
   config,
@@ -58,26 +62,10 @@ let
             ) "directory ${quoteFerron cfg.ferron.tls.acme.directory}"}
         }
       '';
-  ferronConfig = ''
-    {
-        default_http_port ${toString cfg.ferron.httpPort}
-        default_https_port ${if cfg.ferron.tls.enable then toString cfg.ferron.httpsPort else "false"}
-        tcp {
-            listen ${quoteFerron cfg.ferron.listenAddress}
-        }
-    }
 
-    ${cfg.ferron.domain} {
-        ${ferronTls}
-        ${lib.optionalString cfg.pairing.enable ''
-          location /pair {
-              proxy http://${cfg.pairing.listenAddress}:${toString cfg.pairing.port}
-          }
-        ''}
-        proxy http://${cfg.listenAddress}:${toString cfg.port}
-        ${cfg.ferron.extraConfig}
-    }
-  '';
+  ferronConfigFile = pkgs.writeText "ferron.conf" cfg.ferron.configText;
+  ferronNeedsBindCapability =
+    cfg.ferron.httpPort < 1024 || (cfg.ferron.tls.enable && cfg.ferron.httpsPort < 1024);
 
   redisRuntimeConfig = pkgs.writeShellScript "buzz-redis-config" ''
     set -euo pipefail
@@ -97,7 +85,7 @@ let
     } > /run/buzz-redis/redis.conf
   '';
 
-  serviceValues = builtins.removeAttrs cfg [ "container" ];
+  serviceValues = removeAttrs cfg [ "container" ];
   defaultForwards =
     if cfg.ferron.enable then
       [
@@ -122,8 +110,6 @@ let
       ];
 in
 {
-  imports = [ (import ./ferron.nix { inherit self; }) ];
-
   options.services.buzz-relay = {
     enable = mkEnableOption "Buzz relay";
 
@@ -142,7 +128,7 @@ in
 
     baseUid = mkOption {
       type = baseIdType;
-      default = 5573;
+      default = 5500;
       description = "First UID in the five-account relay service range.";
     };
 
@@ -579,6 +565,30 @@ in
           };
         };
       };
+      configText = mkOption {
+        type = types.str;
+        default = ''
+          {
+              default_http_port ${toString cfg.ferron.httpPort}
+              default_https_port ${if cfg.ferron.tls.enable then toString cfg.ferron.httpsPort else "false"}
+              tcp {
+                  listen ${quoteFerron cfg.ferron.listenAddress}
+              }
+          }
+
+          ${cfg.ferron.domain} {
+              ${ferronTls}
+              ${lib.optionalString cfg.pairing.enable ''
+                location /pair {
+                    proxy http://${cfg.pairing.listenAddress}:${toString cfg.pairing.port}
+                }
+              ''}
+              proxy http://${cfg.listenAddress}:${toString cfg.port}
+              ${cfg.ferron.extraConfig}
+          }
+        '';
+        description = "generated ferron configuration";
+      };
     };
 
     container = {
@@ -599,6 +609,11 @@ in
         defaultText = literalExpression "config.services.buzz-relay.rootDataDir";
         description = "Host directory bind-mounted at rootDataDir in the container.";
       };
+      ephemeral = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Whether to make the container ephemeral";
+      };
       privateNetwork = mkOption {
         type = types.bool;
         default = true;
@@ -607,12 +622,22 @@ in
       hostAddress = mkOption {
         type = types.nullOr types.str;
         default = "10.231.136.1";
-        description = "Host-side address of the container veth pair.";
+        description = "Host-side address of the container veth pair (leave null if using hostBridge).";
+      };
+      hostBridge = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Name of host bridge (leave blank if using hostAddress).";
       };
       localAddress = mkOption {
         type = types.nullOr types.str;
         default = "10.231.136.2";
         description = "Container-side address of the veth pair.";
+      };
+      nameservers = mkOption {
+        type = types.listOf types.str;
+        default = [ "1.1.1.1" ];
+        description = "DNS nameservers written to the container's resolv.conf.";
       };
       privateUsers = mkOption {
         type = types.either types.ints.u32 (
@@ -816,6 +841,11 @@ in
             + (if cfg.ferron.enable && cfg.ferron.tls.enable then 1 else 0);
           message = "services.buzz-relay service ports must be distinct";
         }
+
+        {
+          assertion = !(cfg.container.hostAddress != null && cfg.container.hostBridge != null);
+          message = "Either use container.hostAddress or container.hostBridge, but not both. (They cannot both be non-null)";
+        }
         {
           assertion = builtins.match "[A-Za-z_][A-Za-z0-9_]*" cfg.postgres.database != null;
           message = "services.buzz-relay.postgres.database must be a simple SQL identifier";
@@ -852,6 +882,7 @@ in
       containers.${cfg.container.name} = {
         inherit (cfg.container)
           autoStart
+          ephemeral
           hostAddress
           localAddress
           privateNetwork
@@ -870,6 +901,10 @@ in
             cfg.container.extraConfig
           ];
           nixpkgs.pkgs = pkgs;
+          networking = {
+            inherit (cfg.container) nameservers;
+            useHostResolvConf = false;
+          };
           services.buzz-relay = serviceValues // {
             container.enable = false;
           };
@@ -903,6 +938,15 @@ in
         home = cfg.minio.dataDir;
       };
 
+      users.groups.${cfg.ferron.group}.gid = cfg.ferron.gid;
+      users.users.${cfg.ferron.user} = {
+        isSystemUser = true;
+        group = cfg.ferron.group;
+        uid = cfg.ferron.uid;
+        home = cfg.ferron.dataDir;
+        extraGroups = cfg.ferron.extraGroups;
+      };
+
       ids.uids.postgres = lib.mkForce cfg.postgres.uid;
       ids.gids.postgres = lib.mkForce cfg.postgres.gid;
       users.users.postgres.isSystemUser = true;
@@ -923,25 +967,15 @@ in
         ];
       };
 
-      services.ferron = mkIf cfg.ferron.enable {
-        enable = true;
-        package = cfg.ferron.package;
-        configText = ferronConfig;
-        dataDir = cfg.ferron.dataDir;
-        user = cfg.ferron.user;
-        group = cfg.ferron.group;
-        uid = cfg.ferron.uid;
-        gid = cfg.ferron.gid;
-        extraGroups = cfg.ferron.extraGroups;
-      };
-
       environment.systemPackages = [
         cfg.package
         cfg.redis.package
         cfg.minio.package
         cfg.minio.clientPackage
+        cfg.ferron.package
       ];
 
+      networking.nftables.enable = true;
       networking.firewall.allowedTCPPorts = mkIf cfg.openFirewall (
         if cfg.ferron.enable then
           [ cfg.ferron.httpPort ] ++ optional cfg.ferron.tls.enable cfg.ferron.httpsPort
@@ -959,7 +993,14 @@ in
         "d '${cfg.postgres.dataDir}' 0750 postgres postgres -"
         "d '${cfg.minio.dataDir}' 0750 ${cfg.minio.user} ${cfg.minio.group} -"
         "d '${cfg.minio.objectDataDir}' 0750 ${cfg.minio.user} ${cfg.minio.group} -"
+        "d '${cfg.ferron.dataDir}' 0750 ${cfg.ferron.user} ${cfg.ferron.group} -"
       ];
+
+      # needed for minio
+      # Memory overcommit must be enabled! Without it, a background save or replication
+      # may fail under low memory condition. Being disabled, it can also cause failures
+      # see https://github.com/jemalloc/jemalloc/issues/1328.
+      boot.kernel.sysctl."vm.overcommit_memory" = 1;
 
       systemd.services = {
         buzz-relay-secrets = {
@@ -1170,6 +1211,7 @@ in
           path = [
             pkgs.coreutils
             pkgs.curl
+            pkgs.getent
             cfg.minio.clientPackage
           ];
           serviceConfig = {
@@ -1289,8 +1331,36 @@ in
         };
 
         ferron = mkIf cfg.ferron.enable {
-          requires = [ "buzz-relay.service" ] ++ optional cfg.pairing.enable "buzz-pair-relay.service";
-          after = [ "buzz-relay.service" ] ++ optional cfg.pairing.enable "buzz-pair-relay.service";
+          description = "Ferron web server";
+          after = [
+            "network-online.target"
+            "buzz-relay.service"
+          ]
+          ++ optional cfg.pairing.enable "buzz-pair-relay.service";
+          requires = [
+            "buzz-relay.service"
+          ]
+          ++ optional cfg.pairing.enable "buzz-pair-relay.service";
+          wantedBy = [ "multi-user.target" ];
+          wants = [ "network-online.target" ];
+          serviceConfig = {
+            Type = "simple";
+            User = cfg.ferron.user;
+            Group = cfg.ferron.group;
+            ExecStartPre = "${cfg.ferron.package}/bin/ferron validate -c ${ferronConfigFile}";
+            ExecStart = "${cfg.ferron.package}/bin/ferron run -c ${ferronConfigFile}";
+            WorkingDirectory = cfg.ferron.dataDir;
+            Restart = "on-failure";
+            RestartSec = 5;
+            AmbientCapabilities = optional ferronNeedsBindCapability "CAP_NET_BIND_SERVICE";
+            CapabilityBoundingSet = optional ferronNeedsBindCapability "CAP_NET_BIND_SERVICE";
+            NoNewPrivileges = true;
+            PrivateDevices = true;
+            PrivateTmp = true;
+            ProtectHome = true;
+            ProtectSystem = "strict";
+            ReadWritePaths = [ cfg.ferron.dataDir ];
+          };
         };
       };
     })

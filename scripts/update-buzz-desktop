@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# 
+# SPDX-FileCopyrightText: 2026 Steve Schoettler
+#
+# SPDX-License-Identifier: Apache-2.0
+# 
 """Update the Buzz CLI and ACP packages to the latest desktop release."""
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VERSIONS_PATH = REPO_ROOT / "versions.json"
-COMPONENTS = ("buzz-cli", "buzz-acp")
+COMPONENTS = ("buzz-cli", "buzz-acp", "buzz-agent", "buzz-admin")
 TAG_PREFIX = "desktop-v"
 FAKE_HASH = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 HASH_RE = re.compile(r"got:\s*(sha256-[A-Za-z0-9+/=]+)")
@@ -177,21 +182,23 @@ def hash_from_failed_build(label: str) -> str:
 
 
 def update(tag_override: str | None) -> None:
-    if shutil.which("nix") is None:
-        raise UpdateError("required tool not found: nix")
-
     original = VERSIONS_PATH.read_bytes()
     versions = json.loads(original)
     entries = [versions.get(component) for component in COMPONENTS]
     if not all(isinstance(entry, dict) for entry in entries):
-        raise UpdateError("versions.json must contain buzz-cli and buzz-acp objects")
+        raise UpdateError("versions.json must contain buzz-cli, buzz-acp, buzz-agent, and buzz-admin objects")
 
     cli = versions["buzz-cli"]
     acp = versions["buzz-acp"]
+    agent = versions["buzz-agent"]
+    admin = versions["buzz-admin"]
     owner = cli.get("owner")
     repo = cli.get("repo")
-    if not owner or not repo or (owner, repo) != (acp.get("owner"), acp.get("repo")):
-        raise UpdateError("buzz-cli and buzz-acp must reference the same GitHub repository")
+    if not owner or not repo \
+        or (owner, repo) != (acp.get("owner"), acp.get("repo")) \
+        or (owner, repo) != (agent.get("owner"), agent.get("repo")) \
+        or (owner, repo) != (admin.get("owner"), admin.get("repo")) :
+        raise UpdateError("buzz-cli, buzz-acp, buzz-agent, and buzz-admin must reference the same GitHub repository")
 
     tag = tag_override or latest_desktop_tag(owner, repo)
     match = VERSION_RE.fullmatch(tag)
@@ -199,6 +206,12 @@ def update(tag_override: str | None) -> None:
         raise UpdateError(f"desktop tag must match {TAG_PREFIX}<major>.<minor>.<patch>: {tag}")
     version = tag.removeprefix(TAG_PREFIX)
     previous_version = cli.get("version", "unknown")
+    if version == previous_version:
+        info(f"Buzz Desktop is already at {version} ({tag}); nothing to do")
+        return
+
+    if shutil.which("nix") is None:
+        raise UpdateError("required tool not found: nix")
 
     changed = False
     try:
@@ -221,10 +234,13 @@ def update(tag_override: str | None) -> None:
             versions[component]["cargoHash"] = cargo_hash
         save_versions(versions)
 
-        info("building buzz-cli and buzz-acp with their package tests")
+        info("building buzz-cli, buzz-acp, buzz-agent, and buzz-admin with their package tests")
         result = nix_build(*COMPONENTS)
         if result.returncode != 0:
-            raise UpdateError("final Nix build failed")
+            info("final Nix build failed; retrying once")
+            result = nix_build(*COMPONENTS)
+        if result.returncode != 0:
+            raise UpdateError("final Nix build failed after one retry")
 
         info(f"source hash: {source_hash}")
         info(f"Cargo hash:  {cargo_hash}")
@@ -239,7 +255,7 @@ def update(tag_override: str | None) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Update buzz-cli and buzz-acp to the latest stable desktop-v release, "
+            "Update buzz-cli, buzz-acp, buzz-agent, buzz-admin to the latest stable desktop-v release, "
             "refresh their Nix hashes, and build both packages."
         )
     )

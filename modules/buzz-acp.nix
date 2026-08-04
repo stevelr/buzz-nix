@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Steve Schoettler
+#
+# SPDX-License-Identifier: Apache-2.0
+
 {
   self,
   llm-agents,
@@ -36,7 +40,8 @@ let
     else
       cfg.agentArgs;
   runtimePackages = [
-    cfg.cliPackage
+    self.packages.${system}.buzz-cli
+    self.packages.${system}.buzz-agent
   ]
   ++ optional cfg.codexAcp.enable cfg.codexAcp.package
   ++ optional cfg.claudeAcp.enable cfg.claudeAcp.package
@@ -51,13 +56,6 @@ in
       default = self.packages.${system}.buzz-acp;
       defaultText = literalExpression "buzz-nix.packages.\${pkgs.system}.buzz-acp";
       description = "Buzz ACP harness package.";
-    };
-
-    cliPackage = mkOption {
-      type = types.package;
-      default = self.packages.${system}.buzz-cli;
-      defaultText = literalExpression "buzz-nix.packages.\${pkgs.system}.buzz-cli";
-      description = "Buzz CLI package made available to the agent.";
     };
 
     relayUrl = mkOption {
@@ -209,12 +207,7 @@ in
       createHome = true;
     };
 
-    environment.systemPackages = [
-      cfg.package
-      cfg.cliPackage
-    ]
-    ++ optional cfg.codexAcp.enable cfg.codexAcp.package
-    ++ optional cfg.claudeAcp.enable cfg.claudeAcp.package;
+    environment.systemPackages = runtimePackages;
 
     systemd.tmpfiles.rules = mkIf cfg.createUser [
       "d '${cfg.stateDir}' 0750 ${cfg.user} ${cfg.group} -"

@@ -1,17 +1,21 @@
+<!--
+SPDX-FileCopyrightText: 2026 Steve Schoettler
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Relay setup
 
 The relay module assembles Buzz, PostgreSQL, Redis, MinIO, and the temporary device-pairing relay as native systemd services. Container mode places that system in a declarative NixOS systemd-nspawn container and bind-mounts its persistent state from the host.
 
-The flake checks evaluate the NixOS modules and validate one generated non-TLS Ferron configuration; they do not validate the ACME example or boot the complete service stack in a NixOS VM. The relay and Ferron derivations also omit their upstream test suites. Validate authentication, TLS issuance, readiness, persistence, and recovery in a staging deployment before exposing the relay publicly.
-
 ## Public relay with Ferron and ACME
 
-Before rebuilding, point the relay hostname at the NixOS host, permit inbound TCP ports 80 and 443, choose an unused private veth subnet, and reserve five consecutive numeric user and group IDs. Ferron terminates client TLS; its default ACME HTTP-01 challenge requires port 80.
+Point the relay hostname at the NixOS host, permit inbound TCP ports 80 and 443, choose an unused private veth subnet, and reserve five consecutive numeric user and group IDs. Ferron terminates client TLS; its default ACME HTTP-01 challenge requires port 80.
 
 Inspect `ip route show` before choosing the veth addresses. Check the proposed IDs against every configured name service; for the defaults, the following command should print nothing:
 
 ```console
-for id in $(seq 5573 5577); do getent passwd "$id"; getent group "$id"; done
+for id in $(seq 5500 5504); do getent passwd "$id"; getent group "$id"; done
 ```
 
 Add the flake as shown in [the README](./README.md#add-the-flake), then define the relay host inside that `outputs` block:
@@ -20,7 +24,7 @@ Add the flake as shown in [the README](./README.md#add-the-flake), then define t
 nixosConfigurations.relay-host = nixpkgs.lib.nixosSystem {
   system = "x86_64-linux";
   modules = [
-    buzz-nix.nixosModules.buzz-relay-container
+    buzz-nix.nixosModules.buzz-relay
     # The host configuration owns hardware settings, boot setup, and
     # system.stateVersion.
     ./configuration.nix
@@ -33,15 +37,15 @@ nixosConfigurations.relay-host = nixpkgs.lib.nixosSystem {
           name = "buzz-relay";
           hostAddress = "10.231.136.1";
           localAddress = "10.231.136.2";
+          nameservers = [ "1.1.1.1" ];
 
-          # The container always sees rootDataDir below. The host may
-          # keep the bind-mounted data on another filesystem.
+          # Default persistence folder on host.
+          # All services create permission-scoped folders below this.
           hostDataDir = "/srv/buzz-relay";
         };
 
-        rootDataDir = "/var/lib/buzz-relay";
-        baseUid = 5573;
-        baseGid = 5573;
+        baseUid = 5500;
+        baseGid = 5500;
 
         ferron = {
           enable = true;
@@ -57,6 +61,42 @@ nixosConfigurations.relay-host = nixpkgs.lib.nixosSystem {
   ];
 };
 ```
+
+Container mode disables `networking.useHostResolvConf` so a host-local resolver address is not copied into the private network namespace. `container.nameservers` supplies the container's resolver list and defaults to `[ "1.1.1.1" ]`.
+
+### Host routing and NAT
+
+The container uses the host-side veth address as its default gateway. Enable IPv4 forwarding and source NAT for container egress. If one external host address should terminate directly at the container, add DNAT in both `prerouting` and `output`: `prerouting` handles traffic arriving from other machines, while `output` handles connections originating on the host itself.
+
+```nix
+boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
+
+# sample host nftables firewall to forward HTTPS from `10.10.10.10` to ferron on relay container.
+networking.nftables = {
+  enable = true;
+  tables."buzz-relay-nat" = {
+    family = "ip";
+    content = ''
+      chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+        ip daddr 10.10.10.10 tcp dport 443 dnat to 10.231.136.2:443
+      }
+
+      chain output {
+        type nat hook output priority dstnat; policy accept;
+        ip daddr 10.10.10.10 tcp dport 443 dnat to 10.231.136.2:443
+      }
+
+      chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        ip saddr 10.231.136.2 masquerade comment "buzz-relay egress"
+      }
+    '';
+  };
+};
+```
+
+Only container egress is masqueraded, preserving the original client address for Ferron. The container's default route through `10.231.136.1` returns DNATed connections through the host. Change the DNAT destination port if `services.buzz-relay.ferron.httpsPort` is not 443. On a host whose forward chain has a drop policy, also add rules to that existing chain allowing new traffic to the published container ports, established return traffic, and container egress. An `accept` rule in a separate base chain does not override a drop in another base chain.
 
 Apply the host configuration, then inspect the container and its services:
 
@@ -128,7 +168,7 @@ services.buzz-relay.ferron = {
 };
 
 services.buzz-relay.container.extraConfig = {
-  users.groups.buzz-tls.gid = 5580;
+  users.groups.buzz-tls.gid = 5510;
 };
 ```
 
@@ -136,15 +176,19 @@ Place the files beneath the host data directory at `tls/fullchain.pem` and `tls/
 
 The supplementary group ID is outside the five-ID service range, so verify that it is also unused on the host. Install the files with numeric group ownership preserved through the bind mount:
 
-```console
-sudo install -d -m 0710 -o root -g 5580 /srv/buzz-relay/tls
-sudo install -m 0640 -o root -g 5580 fullchain.pem /srv/buzz-relay/tls/fullchain.pem
-sudo install -m 0640 -o root -g 5580 key.pem /srv/buzz-relay/tls/key.pem
+```shell
+sudo install -d -m 0710 -o root -g 5510 /srv/buzz-relay/tls
+sudo install -m 0640 -o root -g 5510 fullchain.pem /srv/buzz-relay/tls/fullchain.pem
+sudo install -m 0640 -o root -g 5510 key.pem /srv/buzz-relay/tls/key.pem
 ```
 
 ## Persistent layout and service IDs
 
-All service paths are configurable. Their defaults remain beneath `rootDataDir`:
+The container is ephemeral by default (container can be destroyed and recreated),
+so the services need a persistent disk location.
+Designate a host folder, `hostDataDir`, which is mounted into the
+container as `rootDataDir`. All service persistent data is mapped to subfolders
+under those directories, with service-specific permissions.
 
 ```text
 /var/lib/buzz-relay/
@@ -161,20 +205,18 @@ All service paths are configurable. Their defaults remain beneath `rootDataDir`:
 
 The service range begins at `baseUid` and `baseGid`: relay is offset 0, PostgreSQL 1, Redis 2, MinIO 3, and Ferron 4. Each individual UID and GID can override its derived value. Container mode defaults to `privateUsers = "no"` because UID remapping changes ownership semantics for the persistent bind mount.
 
-When `container.hostDataDir` differs from `rootDataDir`, the host layout is rooted at `hostDataDir`; paths inside the container remain rooted at `rootDataDir`.
-
-Container mode persists `rootDataDir` and any paths listed in `container.extraBindMounts`. If a service data path is moved outside `rootDataDir`, give it a writable host bind mount or its contents remain in the container's replaceable root filesystem. Include every such mount in the backup set.
+If any service data path is moved outside `rootDataDir`, make sure it has a writable host bind mount, and include it in the backup plan.
 
 ## Identities and membership
 
-On first start, `buzz-relay-secrets.service` generates database, Redis, S3, relay, and owner credentials. Non-empty scalar secrets are preserved. Each relay or owner keypair is one unit: if either half is missing or empty, the service regenerates both files and rotates that identity. The derived environment files are rewritten whenever the secrets service runs. The generated `owner.env` contains `BUZZ_PRIVATE_KEY` for the relay owner and should be handled as a secret.
+On first start, `buzz-relay-secrets.service` generates database, Redis, S3 (minio), relay, and owner credentials. Non-empty scalar secrets are preserved. Each relay or owner keypair is one unit: if either half is missing or empty, the service regenerates both files and rotates that identity. The derived environment files are rewritten whenever the secrets service runs. The generated `owner.env` contains `BUZZ_PRIVATE_KEY` for the relay owner and should be handled as a secret.
 
-The matching owner public key is stored in `secrets/owner-public-key`. With the example host path, obtain the value for an agent's `agentOwner` option with `sudo cat /srv/buzz-relay/secrets/owner-public-key`.
+An owner identity is automatically generated. If you want to make yourself the owner, replace the contents of secrets/owner-public-key with your public key and restart the container.
 
 Generate a separate signing identity for each user or headless agent. The command prints a public key and a secret key:
 
 ```console
-sudo nixos-container run buzz-relay -- buzz-admin generate-key
+nix run .#buzz-admin -- generate-key
 ```
 
 Store the secret key immediately in the user's secret manager or protected environment file. Register only the public key with the relay. `buzz-admin` uses the internal database and Redis credentials from `relay.env`; the public `RELAY_URL` selects the community seeded by the relay:
@@ -185,11 +227,11 @@ sudo nixos-container run buzz-relay -- sh -c \
    RELAY_URL=wss://buzz.example.com buzz-admin add-member --pubkey PUBLIC_KEY'
 ```
 
-Each ACP agent needs its own registered key. Give its secret key to the agent machine through a root-managed secret file; do not put it in a Nix expression.
+Each ACP agent needs its own registered key. Give its secret key to the agent machine through a root-managed secret file, mounted into the agent space to keep it out of the nix store.
 
 ## Backups and recovery
 
-Back up every persistent host mount. With the default layout, `container.hostDataDir` contains the database, object and Git data, generated identities, membership authority, and Ferron ACME state. The shell trap below restarts the container if `rsync` fails or is interrupted:
+Back up all secret keys. With the default layout, `container.hostDataDir` contains the database, object and Git data, generated identities, membership authority, and Ferron ACME state. The shell trap below restarts the container if `rsync` fails or is interrupted:
 
 ```console
 (
@@ -217,3 +259,9 @@ sudo nixos-container run buzz-relay -- journalctl -u buzz-relay -u ferron -n 200
 ```
 
 ACME HTTP-01 requires public DNS to resolve to the host and unmodified inbound access to port 80. A Ferron validation failure appears in `systemctl status ferron` before the server starts.
+
+## FAQ
+
+### Isn't minio deprecated/non-free/out-of-favor?
+
+I tried using `garage` but there were compatibility problems so I had to revert to a pinned version of minio, which is what buzz uses in it's [compose.yml sample](https://github.com/block/buzz/blob/main/deploy/compose/compose.yml) (as of v0.5.5).

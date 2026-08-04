@@ -1,0 +1,26 @@
+version = 1
+
+# Code and other first-party project files.
+[[annotations]]
+path = [
+  "*.md",
+  "**/*.nix",
+  "scripts/update-buzz-desktop",
+  "*.toml",
+]
+# precedence = "closest"
+SPDX-FileCopyrightText = "2026 Steve Schoettler"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Generated, lock, and data files: no original authorship; copyright disclaimed.
+# `closest` so any of these that later grows its own header keeps it.
+[[annotations]]
+path = [
+  "flake.lock",
+  "versions.json",
+  ".gitignore",
+  ".jj",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "NONE"
+SPDX-License-Identifier = "CC0-1.0"

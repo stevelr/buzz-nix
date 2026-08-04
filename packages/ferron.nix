@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Steve Schoettler
+#
+# SPDX-License-Identifier: Apache-2.0
+
 {
   lib,
   stdenv,

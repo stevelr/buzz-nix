@@ -1,25 +1,51 @@
+<!--
+SPDX-FileCopyrightText: 2026 Steve Schoettler
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Headless agent setup
 
-ACP, the Agent Client Protocol, is the stdio protocol between the Buzz harness and an AI adapter. `services.buzz-acp` runs that harness under systemd, installs the Buzz CLI, and can provide either the `codex-acp` or `claude-agent-acp` adapter from `llm-agents.nix`.
+This guide shows how to run the buzz harness on a headless nixos server using ACP, the Agent Client Protocol.
+
+Modes of operation:
+
+```
+buzz-acp <-> ACP protocol over stdio <-> codex-acp <-> codex
+```
+
+```
+buzz-acp <-> ACP protocol over stdio <-> claude-agent-acp <-> claude
+```
+
+```
+buzz-acp <-> ACP protocol over stdio
+             <-> buzz-agent <-> OpenAI API <-> any OpenAI API-compatible model
+```
+
+`services.buzz-acp` runs the harness under systemd, installs the Buzz CLI, buzz-agent, and acp adapters, and invokes agents. You control all of these through buzz desktop or mobile apps.
 
 ## Prepare an agent identity
 
-Generate a distinct Nostr signing identity for the agent and add its public key to the relay membership set. [The relay setup guide](./RELAY_SETUP.md#identities-and-membership) shows both operations. Keep the private key on the agent machine in a root-readable environment file:
+Generate a distinct agent keypair
+
+```
+nix run .#buzz-admin -- generate-key
+```
+
+and add its public key as a relay member as desscribed in [The relay setup guide](./RELAY_SETUP.md#identities-and-membership). Put the private key on the agent machine in a root-readable environment file:
 
 ```text
 BUZZ_PRIVATE_KEY=<agent-secret-key>
-OPENAI_API_KEY=<adapter-credential>
 ```
 
-Use `ANTHROPIC_API_KEY` instead of `OPENAI_API_KEY` for the Claude adapter. The host needs outbound DNS and TLS connectivity to the Buzz relay and to the selected model provider.
+Additional API keys or other environment variables needed by agents can be set either in this file or in the buzz app in the agent settings. If you have a claude code or codex subscription, it is not necessary to set api keys in the environment because you can authenticate those services through the buzz app.
 
 Provision the file as `root:root` with mode `0400` or `0600`. The systemd service manager reads `EnvironmentFile` before starting the process, so the agent account does not need direct access. Secret managers such as sops-nix or agenix can create `/run/secrets/buzz-agent.env` with those permissions at activation time.
 
-Copy the relay owner's public key from `secrets/owner-public-key` to the `agentOwner` option below. The public key is not secret. A verified `BUZZ_AUTH_TAG` can supply the owner instead by proving that the owner delegated this agent identity; ignore this alternative unless attestations are already part of the provisioning workflow. Without either source, the default `owner-only` gate rejects every inbound event.
+Copy the relay owner's public key from the relay server's `secrets/owner-public-key` to the `agentOwner` option below. This key is not secret so it's ok to be in the nix store.
 
-## Run Buzz with Codex ACP
-
-The example uses the `inputs` module argument provided by the README's `specialArgs` configuration.
+## Configure Buzz
 
 ```nix
 { inputs, pkgs, ... }:
@@ -32,32 +58,23 @@ The example uses the `inputs` module argument provided by the README's `specialA
     environmentFile = "/run/secrets/buzz-agent.env";
 
     codexAcp.enable = true;
+    # claudeAcp.enable = true;
 
     agentOwner = "OWNER_PUBLIC_KEY";
     respondTo = "owner-only";
+
+    # List other packages the agents need. These will be in the agents' PATH.
+    # extraPackages = [ ];
+
+    # Non-secret environment variables. Keep secrets in the buzz-agent.env file or configure as agent settings in the buzz app.
+    # extraEnvironment = { };
   };
 }
 ```
 
-The module resolves `BUZZ_ACP_AGENT_COMMAND` to the packaged `codex-acp` binary and puts both the adapter and `buzz` CLI on the service path. Credentials remain in `environmentFile`; Nix store values are appropriate only for non-secret settings.
+`owner-only` limits control of the agent to the owner. Change to `anyone` for unrestricted control, or, for a team, use `allowlist`, and set `respondToAllowlist` to a list of users' public keys.
 
-## Run Buzz with Claude ACP
-
-Use an environment file containing the Claude adapter's credentials, then select the packaged adapter:
-
-```nix
-services.buzz-acp = {
-  enable = true;
-  relayUrl = "wss://buzz.example.com";
-  environmentFile = "/run/secrets/buzz-agent.env";
-
-  claudeAcp.enable = true;
-  agentOwner = "OWNER_PUBLIC_KEY";
-  respondTo = "owner-only";
-};
-```
-
-This resolves `BUZZ_ACP_AGENT_COMMAND` to `claude-agent-acp`. One module instance manages one harness and one adapter, so the Codex and Claude switches are mutually exclusive. Define a second systemd service outside this module, or run a second NixOS container or VM, to host both adapters on one machine.
+The module sets the default `BUZZ_ACP_AGENT_COMMAND` to the packaged `codex-acp` or `claude-agent-acp`. It can be overridden on a per-agent basis within the buzz app. Keep credentials in `environmentFile`; Nix store values are appropriate only for non-secret settings.
 
 Apply the configuration and inspect startup:
 
@@ -67,10 +84,6 @@ sudo systemctl status buzz-acp
 sudo journalctl -u buzz-acp -f
 ```
 
-## Author gates
-
-`owner-only` accepts the owner and sibling agents with a valid attestation from that owner. `allowlist` adds the public keys in `respondToAllowlist` to that owner-and-sibling set and requires at least one explicit key. The other modes are `anyone` and `nobody`.
-
 ## Functional test
 
 From an owner-authenticated machine with `buzz-cli`, load the owner key from a protected environment file. Put `BUZZ_PRIVATE_KEY` and the public HTTPS `BUZZ_RELAY_URL` in that file; loading it avoids placing the key in shell history.
@@ -79,6 +92,7 @@ From an owner-authenticated machine with `buzz-cli`, load the owner key from a p
 set -a
 . /run/secrets/buzz-owner.env
 set +a
+export RELAY_URL="wss://buzz.example.com"
 
 buzz channels create --name agent-test --type stream --visibility private
 buzz channels add-member --channel <channel-uuid> --pubkey <agent-public-key> --role bot
@@ -109,33 +123,17 @@ For example, `agentArgs = ''-c,model="provider/model",acp'';` becomes three argu
 
 Use `extraPackages` for the adapter and any tools it launches. `extraEnvironment` carries non-secret tuning such as model names or timeout settings.
 
-## Existing user account
+## Running as an existing user
 
-The default service account owns `/var/lib/buzz-acp`. To run under an existing account:
+The default configuration runs buzz-acp and agents under a unique user id. If you want the agents to access or modify your own files, change the user and group to existing user and group names and set `createUser = false`.
 
 ```nix
 services.buzz-acp = {
-  user = "agent";
-  group = "agent";
+  user = "alice";
+  group = "users";
   createUser = false;
-  stateDir = "/home/agent";
+  stateDir = "/home/alice";
 };
 ```
 
-The account must resolve through the host's user database and own or be able to write `stateDir`. The service hardening permits writes only beneath `stateDir`, so place every writable working repository there. The systemd service manager, not the account, reads `environmentFile`.
-
-## Install the tools without a service
-
-Use the package outputs when another supervisor owns the process lifecycle:
-
-```nix
-{ inputs, pkgs, ... }:
-{
-  environment.systemPackages = with inputs.buzz-nix.packages.${pkgs.system}; [
-    buzz-acp
-    buzz-cli
-  ];
-}
-```
-
-These outputs do not contain an ACP adapter. Install Codex ACP, Claude Agent ACP, Goose, or another compatible adapter separately, and set `BUZZ_ACP_AGENT_COMMAND` to its executable. Set `BUZZ_RELAY_URL`, `BUZZ_PRIVATE_KEY`, and `BUZZ_ACP_AGENT_ARGS` in the supervisor's runtime environment.
+systemd service hardening permits writes only beneath `stateDir`, so place every writable working repository there. The systemd service manager reads `environmentFile`.

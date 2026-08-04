@@ -1,42 +1,58 @@
 {
-  "buzz-acp": {
-    "version": "0.5.4",
-    "owner": "block",
-    "repo": "buzz",
-    "rev": "desktop-v0.5.4",
-    "sha256": "sha256-nTEq0edrcTIFw0Wn4J/BuhgYM/9xAZe0HBWiYMsu50Q=",
-    "cargoHash": "sha256-tolEndhaUSJkBzShuLHMAeucCf2QDnlKRBaHPhOHrnw="
-  },
-  "buzz-cli": {
-    "version": "0.5.4",
-    "owner": "block",
-    "repo": "buzz",
-    "rev": "desktop-v0.5.4",
-    "sha256": "sha256-nTEq0edrcTIFw0Wn4J/BuhgYM/9xAZe0HBWiYMsu50Q=",
-    "cargoHash": "sha256-tolEndhaUSJkBzShuLHMAeucCf2QDnlKRBaHPhOHrnw="
-  },
-  "buzz-relay": {
-    "version": "0.2.0-unstable-2026-08-02",
-    "owner": "block",
-    "repo": "buzz",
-    "rev": "28ae6cd2174309529305724e455c7ca082f6fe4b",
-    "sha256": "sha256-1NRprxtvHL09op1+i7NhnNTe2mMe74mwdBR9kVbvLc4=",
-    "cargoHash": "sha256-kFwkIxtgqlcRkwbRGyQZyn+Luuoox0ZgTMky033rhyQ="
-  },
-  "ferron": {
-    "version": "3.0.0-beta.8",
-    "owner": "ferronweb",
-    "repo": "ferron",
-    "rev": "3.0.0-beta.8",
-    "sha256": "sha256-v4lTfd9SSfiyQ0R0xBhCiplxNxC3S5zUtr7ILil5sKg=",
-    "cargoHash": "sha256-2lvIZuxHhfMYPq4qN2Hx3qD2RR0g0DWAFSF/3202KNI="
-  },
-  "minio": {
-    "version": "2025-09-07T16-13-09Z",
-    "owner": "minio",
-    "repo": "minio",
-    "rev": "RELEASE.2025-09-07T16-13-09Z",
-    "sha256": "sha256-0IVxxeM+h3josP+wnS3q4Nrmd3fT9V+KlHxlwz3QyIQ=",
-    "vendorHash": "sha256-JrDLUVGtwYqwwB+Suutewi6snHyIpG3DOnDn5O0C+L0="
-  }
+	"buzz-acp": {
+		"version": "0.5.5",
+		"owner": "block",
+		"repo": "buzz",
+		"rev": "desktop-v0.5.5",
+		"sha256": "sha256-ivxa9Lc6Q3aDzMXClR25aB+H/Na2ew3h1fVf4wL7Tyo=",
+		"cargoHash": "sha256-tolEndhaUSJkBzShuLHMAeucCf2QDnlKRBaHPhOHrnw="
+	},
+	"buzz-cli": {
+		"version": "0.5.5",
+		"owner": "block",
+		"repo": "buzz",
+		"rev": "desktop-v0.5.5",
+		"sha256": "sha256-ivxa9Lc6Q3aDzMXClR25aB+H/Na2ew3h1fVf4wL7Tyo=",
+		"cargoHash": "sha256-tolEndhaUSJkBzShuLHMAeucCf2QDnlKRBaHPhOHrnw="
+	},
+	"buzz-admin": {
+		"version": "0.5.5",
+		"owner": "block",
+		"repo": "buzz",
+		"rev": "desktop-v0.5.5",
+		"sha256": "sha256-ivxa9Lc6Q3aDzMXClR25aB+H/Na2ew3h1fVf4wL7Tyo=",
+		"cargoHash": "sha256-tolEndhaUSJkBzShuLHMAeucCf2QDnlKRBaHPhOHrnw="
+	},
+	"buzz-agent": {
+		"version": "0.5.5",
+		"owner": "block",
+		"repo": "buzz",
+		"rev": "desktop-v0.5.5",
+		"sha256": "sha256-ivxa9Lc6Q3aDzMXClR25aB+H/Na2ew3h1fVf4wL7Tyo=",
+		"cargoHash": "sha256-tolEndhaUSJkBzShuLHMAeucCf2QDnlKRBaHPhOHrnw="
+	},
+	"buzz-relay": {
+		"version": "0.2.0-unstable-2026-08-02",
+		"owner": "block",
+		"repo": "buzz",
+		"rev": "28ae6cd2174309529305724e455c7ca082f6fe4b",
+		"sha256": "sha256-1NRprxtvHL09op1+i7NhnNTe2mMe74mwdBR9kVbvLc4=",
+		"cargoHash": "sha256-kFwkIxtgqlcRkwbRGyQZyn+Luuoox0ZgTMky033rhyQ="
+	},
+	"ferron": {
+		"version": "3.0.0-beta.8",
+		"owner": "ferronweb",
+		"repo": "ferron",
+		"rev": "3.0.0-beta.8",
+		"sha256": "sha256-v4lTfd9SSfiyQ0R0xBhCiplxNxC3S5zUtr7ILil5sKg=",
+		"cargoHash": "sha256-2lvIZuxHhfMYPq4qN2Hx3qD2RR0g0DWAFSF/3202KNI="
+	},
+	"minio": {
+		"version": "2025-09-07T16-13-09Z",
+		"owner": "minio",
+		"repo": "minio",
+		"rev": "RELEASE.2025-09-07T16-13-09Z",
+		"sha256": "sha256-0IVxxeM+h3josP+wnS3q4Nrmd3fT9V+KlHxlwz3QyIQ=",
+		"vendorHash": "sha256-JrDLUVGtwYqwwB+Suutewi6snHyIpG3DOnDn5O0C+L0="
+	}
 }
