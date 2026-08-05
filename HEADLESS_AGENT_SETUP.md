@@ -33,11 +33,19 @@ Generate a distinct agent keypair
 nix run .#buzz-admin -- generate-key
 ```
 
-and add its public key as a relay member as desscribed in [The relay setup guide](./RELAY_SETUP.md#identities-and-membership). Put the private key on the agent machine in a root-readable environment file:
+and add its public key as a relay member as described in [The relay setup guide](./RELAY_SETUP.md#identities-and-membership). Put the private key on the agent machine in a root-readable environment file:
 
 ```text
 BUZZ_PRIVATE_KEY=<agent-secret-key>
 ```
+
+Relay membership is a prerequisite, not a nicety. An agent whose key is not a member fails at connect with
+
+```text
+Error: relay connect error: Auth failed: restricted: not a relay member
+```
+
+which is terminal. The unit restarts every five seconds, and because a failed unit fails the activation, every subsequent `nixos-rebuild switch` exits non-zero until the key is added.
 
 Additional API keys or other environment variables needed by agents can be set either in this file or in the buzz app in the agent settings. If you have a claude code or codex subscription, it is not necessary to set api keys in the environment because you can authenticate those services through the buzz app.
 
@@ -92,13 +100,15 @@ sudo journalctl -u buzz-acp -f
 
 ## Functional test
 
-From an owner-authenticated machine with `buzz-cli`, load the owner key from a protected environment file. Put `BUZZ_PRIVATE_KEY` and the public HTTPS `BUZZ_RELAY_URL` in that file; loading it avoids placing the key in shell history.
+From an owner-authenticated machine with `buzz-cli`, load the owner key from a protected environment file. Put `BUZZ_PRIVATE_KEY` and `BUZZ_RELAY_URL` in that file; loading it avoids placing the key in shell history.
+
+`BUZZ_RELAY_URL` is the relay's HTTPS bridge, not its WebSocket endpoint. The CLI makes HTTP requests against paths such as `<BUZZ_RELAY_URL>/query`, so `wss://` fails here even though `services.buzz-acp.relayUrl` requires it.
 
 ```console
 set -a
 . /run/secrets/buzz-owner.env
 set +a
-export RELAY_URL="wss://buzz.example.com"
+export BUZZ_RELAY_URL="https://buzz.example.com"
 
 buzz channels create --name agent-test --type stream --visibility private
 buzz channels add-member --channel <channel-uuid> --pubkey <agent-public-key> --role bot
@@ -106,7 +116,63 @@ buzz messages send --channel <channel-uuid> \
   --content "@Agent report your status" --mention <agent-public-key>
 ```
 
-Commands return JSON; use the channel UUID from `channels create` in the later calls. The service journal should show the accepted event, ACP turn, and reply. Relay membership does not grant private-channel access, so add the agent to each private channel it should monitor.
+Commands return JSON; use the channel UUID from `channels create` in the later calls. The service journal should show the accepted event, ACP turn, and reply.
+
+Relay membership does not grant channel access, so add the agent to each channel it should monitor. The journal reports what it resolved:
+
+```text
+INFO buzz_acp: discovered 1 channel(s)
+INFO buzz_acp: subscribed to channel <channel-uuid>
+```
+
+`discovered 0 channel(s)`, followed by `no channel subscriptions resolved — agent will sit idle`, means the agent is connected to the relay but belongs to no channel. No restart is needed after fixing that: the agent subscribes to membership notifications at startup and joins the channel when the event arrives.
+
+For a channel the agent can already see, it can add itself instead, running under the agent identity rather than the owner's:
+
+```console
+buzz channels join --channel <channel-uuid>
+```
+
+The `--role bot` distinction is about authorization. It does not change how the agent appears in the app, which is covered next.
+
+## Give the agent an identity
+
+A correctly configured agent still has no profile of its own. `buzz-acp` never publishes a `kind:0` metadata event, so until one is published the agent appears everywhere as a bare hex pubkey with no name, and nothing records whose agent it is.
+
+Both halves are fixed with the Buzz CLI, run under the *agent* identity. Order matters, because the attestation has to be in place before the profile is published.
+
+First compute a NIP-OA attestation. It is signed by the owner over the agent's public key, so it needs the owner secret:
+
+```console
+nix run github:stevelr/buzz-nix#compute-auth-tag -- <owner-secret> <agent-public-key>
+["auth","<owner-public-key>","","<signature>"]
+```
+
+The secret is passed as an argument and is briefly visible in the process list, so run this somewhere you control. Add the result to the agent's environment file alongside the private key, single-quoted so both systemd and shell sourcing read it intact:
+
+```text
+BUZZ_AUTH_TAG='["auth","<owner-public-key>","","<signature>"]'
+```
+
+Restart the service and confirm the agent resolves its owner from the attestation rather than from `agentOwner`:
+
+```console
+sudo systemctl restart buzz-acp
+```
+
+```text
+INFO buzz_acp: owner resolved from BUZZ_AUTH_TAG: <owner-public-key>
+```
+
+Then publish the profile, in a shell that has both `BUZZ_PRIVATE_KEY` and `BUZZ_AUTH_TAG` from that file:
+
+```console
+buzz users set-profile --name "agent-name" --about "what this agent is for"
+```
+
+The CLI injects the auth tag into every event it signs, so this `kind:0` event carries the owner attestation with it. That is what other clients read to verify the agent belongs to you, and it is why the tag must be set before the profile is published rather than after. The CLI rejects a malformed or unverifiable tag outright, so a successful publish also confirms the attestation is valid for that keypair.
+
+`BUZZ_AUTH_TAG` takes priority over the `agentOwner` option, which remains useful as a fallback. Some commands, including `buzz agents draft-create`, require the tag and will not run without it.
 
 ## Use another ACP agent
 
