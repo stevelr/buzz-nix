@@ -39,13 +39,13 @@ and add its public key as a relay member as described in [The relay setup guide]
 BUZZ_PRIVATE_KEY=<agent-secret-key>
 ```
 
-Relay membership is a prerequisite, not a nicety. An agent whose key is not a member fails at connect with
+Relay membership is required, otherwise the agent fails connection with
 
 ```text
 Error: relay connect error: Auth failed: restricted: not a relay member
 ```
 
-which is terminal. The unit restarts every five seconds, and because a failed unit fails the activation, every subsequent `nixos-rebuild switch` exits non-zero until the key is added.
+and restarts every five seconds, and because a failed unit fails the activation, every subsequent `nixos-rebuild switch` exits non-zero until the key is added.
 
 Additional API keys or other environment variables needed by agents can be set either in this file or in the buzz app in the agent settings. If you have a claude code or codex subscription, it is not necessary to set api keys in the environment because you can authenticate those services through the buzz app.
 
