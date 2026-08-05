@@ -72,6 +72,12 @@ Copy the relay owner's public key from the relay server's `secrets/owner-public-
 }
 ```
 
+`agentOwner` needs to be a plain 64-char hex string. If the string begins with `npub1...`, convert to hex with `nak`
+
+```
+nix run nixpkgs#nak -- decode npub1...
+```
+
 `owner-only` limits control of the agent to the owner. Change to `anyone` for unrestricted control, or, for a team, use `allowlist`, and set `respondToAllowlist` to a list of users' public keys.
 
 The module sets the default `BUZZ_ACP_AGENT_COMMAND` to the packaged `codex-acp` or `claude-agent-acp`. It can be overridden on a per-agent basis within the buzz app. Keep credentials in `environmentFile`; Nix store values are appropriate only for non-secret settings.
