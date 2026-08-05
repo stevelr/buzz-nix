@@ -14,14 +14,20 @@
   binary,
   description,
   doCheck ? true,
+  # Build a cargo example rather than the crate's own binaries, and install it
+  # as `binary`. Cargo's --example selector suppresses normal binary targets.
+  example ? null,
+  pname ? component,
 }:
 
 let
   versions = builtins.fromJSON (builtins.readFile ../versions.json);
   release = versions.${component};
+  buildDir = if example == null then "release" else "release/examples";
+  buildName = if example == null then binary else example;
 in
 rustPlatform.buildRustPackage {
-  pname = component;
+  inherit pname;
   inherit (release) version;
 
   src = fetchFromGitHub {
@@ -30,7 +36,13 @@ rustPlatform.buildRustPackage {
   };
 
   cargoHash = release.cargoHash;
-  cargoBuildFlags = [ "-p=${component}" ];
+  cargoBuildFlags = [
+    "-p=${component}"
+  ]
+  ++ lib.optionals (example != null) [
+    "--example"
+    example
+  ];
   cargoTestFlags = [ "-p=${component}" ];
   inherit doCheck;
 
@@ -42,7 +54,7 @@ rustPlatform.buildRustPackage {
   installPhase = ''
     runHook preInstall
     install -Dm755 \
-      "target/${stdenv.hostPlatform.rust.rustcTarget}/release/${binary}" \
+      "target/${stdenv.hostPlatform.rust.rustcTarget}/${buildDir}/${buildName}" \
       "$out/bin/${binary}"
     runHook postInstall
   '';
