@@ -36,6 +36,7 @@
             buzz-admin = pkgs.callPackage ./packages/buzz-admin.nix { };
             buzz-agent = pkgs.callPackage ./packages/buzz-agent.nix { };
             buzz-relay = pkgs.callPackage ./packages/buzz-relay.nix { };
+            compute-auth-tag = pkgs.callPackage ./packages/compute-auth-tag.nix { };
             ferron = pkgs.callPackage ./packages/ferron.nix { };
             minio = pkgs.callPackage ./packages/minio.nix { };
           in
@@ -46,6 +47,7 @@
               buzz-admin
               buzz-agent
               buzz-relay
+              compute-auth-tag
               ferron
               minio
               ;
@@ -60,6 +62,7 @@
         buzz-admin = final.callPackage ./packages/buzz-admin.nix { };
         buzz-agent = final.callPackage ./packages/buzz-agent.nix { };
         buzz-relay = final.callPackage ./packages/buzz-relay.nix { };
+        buzz-compute-auth-tag = final.callPackage ./packages/compute-auth-tag.nix { };
         buzz-ferron = final.callPackage ./packages/ferron.nix { };
         buzz-minio = final.callPackage ./packages/minio.nix { };
       };
