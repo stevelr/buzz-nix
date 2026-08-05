@@ -102,7 +102,7 @@ sudo journalctl -u buzz-acp -f
 
 From an owner-authenticated machine with `buzz-cli`, load the owner key from a protected environment file. Put `BUZZ_PRIVATE_KEY` and `BUZZ_RELAY_URL` in that file; loading it avoids placing the key in shell history.
 
-`BUZZ_RELAY_URL` is the relay's HTTPS bridge, not its WebSocket endpoint. The CLI makes HTTP requests against paths such as `<BUZZ_RELAY_URL>/query`, so `wss://` fails here even though `services.buzz-acp.relayUrl` requires it.
+`BUZZ_RELAY_URL` is the relay's HTTP/HTTPS URL.
 
 ```console
 set -a
