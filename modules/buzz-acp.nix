@@ -110,7 +110,10 @@ in
     agentOwner = mkOption {
       type = types.nullOr types.str;
       default = null;
-      description = "Optional 64-character owner public key.";
+      description = ''
+        Optional 64-character hex owner public key, not an npub. A NIP-OA
+        attestation in BUZZ_AUTH_TAG takes priority over this value.
+      '';
     };
 
     respondTo = mkOption {
@@ -188,6 +191,23 @@ in
       {
         assertion = cfg.environmentFile != null;
         message = "services.buzz-acp.environmentFile must provide BUZZ_PRIVATE_KEY outside the Nix store";
+      }
+      {
+        assertion = cfg.environmentFile == null || lib.hasPrefix "/" cfg.environmentFile;
+        message = ''
+          services.buzz-acp.environmentFile must be an absolute path. systemd does
+          not expand "~" and silently ignores a non-absolute EnvironmentFile, which
+          starts the service with no BUZZ_PRIVATE_KEY.
+        '';
+      }
+      {
+        assertion = cfg.agentOwner == null || builtins.match "[0-9a-fA-F]{64}" cfg.agentOwner != null;
+        message = ''
+          services.buzz-acp.agentOwner must be a 64-character hex public key, not an
+          npub. Convert with: nix run nixpkgs#nak -- decode npub1...
+          A bech32 npub is accepted at startup but never matches an event author, so
+          respondTo = "owner-only" drops every event.
+        '';
       }
       {
         assertion = cfg.respondTo != "allowlist" || cfg.respondToAllowlist != [ ];
