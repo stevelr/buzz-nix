@@ -13,6 +13,7 @@
   component,
   binary,
   description,
+  doCheck ? true,
 }:
 
 let
@@ -31,6 +32,7 @@ rustPlatform.buildRustPackage {
   cargoHash = release.cargoHash;
   cargoBuildFlags = [ "-p=${component}" ];
   cargoTestFlags = [ "-p=${component}" ];
+  inherit doCheck;
 
   nativeBuildInputs = [ pkg-config ];
   nativeCheckInputs = [ cacert ];
