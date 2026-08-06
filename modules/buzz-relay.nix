@@ -113,11 +113,18 @@ in
   options.services.buzz-relay = {
     enable = mkEnableOption "Buzz relay";
 
-    package = mkOption {
+    relayPackage = mkOption {
       type = types.package;
       default = self.packages.${pkgs.stdenv.hostPlatform.system}.buzz-relay;
       defaultText = literalExpression "buzz-nix.packages.\${pkgs.system}.buzz-relay";
-      description = "Package containing buzz-relay, buzz-admin, and buzz-pair-relay.";
+      description = "Package providing the buzz-relay server binary.";
+    };
+
+    adminPackage = mkOption {
+      type = types.package;
+      default = self.packages.${pkgs.stdenv.hostPlatform.system}.buzz-admin;
+      defaultText = literalExpression "buzz-nix.packages.\${pkgs.system}.buzz-admin";
+      description = "Package providing the buzz-admin operator CLI.";
     };
 
     rootDataDir = mkOption {
@@ -439,6 +446,12 @@ in
         default = cfg.ferron.enable;
         defaultText = literalExpression "config.services.buzz-relay.ferron.enable";
         description = "Run the ephemeral pairing sidecar. It must be protected by a reverse proxy.";
+      };
+      package = mkOption {
+        type = types.package;
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.buzz-pair-relay;
+        defaultText = literalExpression "buzz-nix.packages.\${pkgs.system}.buzz-pair-relay";
+        description = "Package providing the buzz-pair-relay sidecar binary.";
       };
       listenAddress = mkOption {
         type = types.str;
@@ -968,12 +981,14 @@ in
       };
 
       environment.systemPackages = [
-        cfg.package
+        cfg.relayPackage
+        cfg.adminPackage
         cfg.redis.package
         cfg.minio.package
         cfg.minio.clientPackage
         cfg.ferron.package
-      ];
+      ]
+      ++ optional cfg.pairing.enable cfg.pairing.package;
 
       networking.nftables.enable = true;
       networking.firewall.allowedTCPPorts = mkIf cfg.openFirewall (
@@ -1016,7 +1031,7 @@ in
             pkgs.coreutils
             pkgs.gawk
             pkgs.openssl
-            cfg.package
+            cfg.adminPackage
           ];
           serviceConfig = {
             Type = "oneshot";
@@ -1254,7 +1269,7 @@ in
             Type = "simple";
             User = cfg.user.name;
             Group = cfg.user.group;
-            ExecStart = "${cfg.package}/bin/buzz-pair-relay";
+            ExecStart = "${cfg.pairing.package}/bin/buzz-pair-relay";
             Restart = "on-failure";
             RestartSec = 5;
             NoNewPrivileges = true;
@@ -1313,7 +1328,7 @@ in
             User = cfg.user.name;
             Group = cfg.user.group;
             EnvironmentFile = relayEnvironmentFile;
-            ExecStart = "${cfg.package}/bin/buzz-relay";
+            ExecStart = "${cfg.relayPackage}/bin/buzz-relay";
             WorkingDirectory = cfg.relayDataDir;
             Restart = "on-failure";
             RestartSec = 5;
