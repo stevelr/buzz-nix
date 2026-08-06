@@ -221,10 +221,14 @@ nix run .#buzz-admin -- generate-key
 
 Store the secret key immediately in the user's secret manager or protected environment file. Register only the public key with the relay. `buzz-admin` uses the internal database and Redis credentials from `relay.env`; the public `RELAY_URL` selects the community seeded by the relay:
 
-```console
-sudo nixos-container run buzz-relay -- sh -c \
-  'set -a; . /var/lib/buzz-relay/secrets/relay.env; set +a; \
-   RELAY_URL=wss://buzz.example.com buzz-admin add-member --pubkey PUBLIC_KEY'
+Use the helper script `relay-env` to set the environment context needed for privileged commands like `buzz-admin`.
+
+```shell
+sudo nixos-container root-login buzz-relay # enter the container as root
+relay-env buzz-admin list-members
+relay-env buzz-admin add-member --pubkey PUBLIC_KEY 
+relay-env buzz-admin list-members
+exit
 ```
 
 Each ACP agent needs its own registered key. Give its secret key to the agent machine through a root-managed secret file, mounted into the agent space to keep it out of the nix store.
