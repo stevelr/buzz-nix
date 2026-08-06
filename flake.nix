@@ -89,7 +89,7 @@
               self.nixosModules.buzz-relay
               {
                 boot.isContainer = true;
-                system.stateVersion = "25.11";
+                system.stateVersion = "26.05";
                 services.buzz-relay = {
                   enable = true;
                   ferron = {
@@ -107,7 +107,7 @@
               self.nixosModules.buzz-relay
               {
                 boot.isContainer = true;
-                system.stateVersion = "25.11";
+                system.stateVersion = "26.06";
                 services.buzz-relay = {
                   enable = true;
                   container.enable = true;
@@ -126,7 +126,7 @@
               self.nixosModules.buzz-acp
               {
                 boot.isContainer = true;
-                system.stateVersion = "25.11";
+                system.stateVersion = "26.05";
                 services.buzz-acp = {
                   enable = true;
                   relayUrl = "wss://relay.example.test";
@@ -142,7 +142,7 @@
               self.nixosModules.buzz-acp
               {
                 boot.isContainer = true;
-                system.stateVersion = "25.11";
+                system.stateVersion = "26.05";
                 services.buzz-acp = {
                   enable = true;
                   relayUrl = "wss://relay.example.test";
