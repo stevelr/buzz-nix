@@ -83,6 +83,18 @@ in
       description = "Primary group of the ACP harness user.";
     };
 
+    uid = mkOption {
+      type = types.ints.between 1 65535;
+      default = 6000;
+      description = "buzz-acp/buzz-agent uid";
+    };
+
+    gid = mkOption {
+      type = types.ints.between 1 65535;
+      default = config.services.buzz-acp.uid;
+      description = "buzz-acp/buzz-agent gid";
+    };
+
     createUser = mkOption {
       type = types.bool;
       default = true;
@@ -219,17 +231,18 @@ in
       }
     ];
 
-    users.groups.${cfg.group} = mkIf cfg.createUser { };
+    users.groups.${cfg.group} = mkIf cfg.createUser { inherit (cfg) gid; };
     users.users.${cfg.user} = mkIf cfg.createUser {
       isSystemUser = true;
       group = cfg.group;
       home = cfg.stateDir;
       createHome = true;
+      inherit (cfg) uid;
     };
 
     environment.systemPackages = runtimePackages;
 
-    systemd.tmpfiles.rules = mkIf cfg.createUser [
+    systemd.tmpfiles.rules = mkIf (cfg.createUser && config.users.users.${cfg.user}.createHome) [
       "d '${cfg.stateDir}' 0750 ${cfg.user} ${cfg.group} -"
     ];
 
