@@ -85,6 +85,31 @@ let
     } > /run/buzz-redis/redis.conf
   '';
 
+  relayEnvWrapper = pkgs.writeShellScriptBin "relay-env" ''
+    set -euo pipefail
+
+    if (( $# == 0 )); then
+      echo "Usage: relay-env COMMAND [ARG...]" >&2
+      exit 2
+    fi
+
+    environment_file=${escapeShellArg relayEnvironmentFile}
+    if [[ ! -e "$environment_file" ]]; then
+      echo "relay-env: $environment_file does not exist" >&2
+      exit 1
+    fi
+    if [[ ! -r "$environment_file" ]]; then
+      echo "relay-env: cannot read $environment_file; run as root" >&2
+      exit 1
+    fi
+
+    set -a
+    source "$environment_file"
+    set +a
+    export RELAY_URL=${escapeShellArg cfg.relayUrl}
+    exec "$@"
+  '';
+
   serviceValues = removeAttrs cfg [ "container" ];
   defaultForwards =
     if cfg.ferron.enable then
@@ -981,6 +1006,7 @@ in
       };
 
       environment.systemPackages = [
+        relayEnvWrapper
         cfg.relayPackage
         cfg.adminPackage
         cfg.redis.package
