@@ -42,6 +42,7 @@ let
   runtimePackages = [
     self.packages.${system}.buzz-cli
     self.packages.${system}.buzz-agent
+    pkgs.nak
   ]
   ++ optional cfg.codexAcp.enable cfg.codexAcp.package
   ++ optional cfg.claudeAcp.enable cfg.claudeAcp.package

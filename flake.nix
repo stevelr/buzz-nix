@@ -79,6 +79,23 @@
         buzz-acp = import ./modules/buzz-acp.nix { inherit self llm-agents; };
       };
 
+      devShells = forAllSystems (
+        system:
+        (
+          let
+            pkgs = nixpkgs.legacyPackages.${system};
+          in
+          {
+            default = pkgs.mkShell {
+              buildInputs = [
+                pkgs.nak
+                self.packages.${system}.buzz-admin
+              ];
+            };
+          }
+        )
+      );
+
       checks = forAllSystems (
         system:
         let

@@ -14,6 +14,8 @@
   binary,
   description,
   doCheck ? true,
+  # Extra flags passed to the test harness (after `--`), e.g. `--skip <test>`.
+  checkFlags ? [ ],
   # Build a cargo example rather than the crate's own binaries, and install it
   # as `binary`. Cargo's --example selector suppresses normal binary targets.
   example ? null,
@@ -44,7 +46,7 @@ rustPlatform.buildRustPackage {
     example
   ];
   cargoTestFlags = [ "-p=${component}" ];
-  inherit doCheck;
+  inherit doCheck checkFlags;
 
   nativeBuildInputs = [ pkg-config ];
   nativeCheckInputs = [ cacert ];

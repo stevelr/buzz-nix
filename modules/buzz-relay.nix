@@ -1013,6 +1013,7 @@ in
         cfg.minio.package
         cfg.minio.clientPackage
         cfg.ferron.package
+        pkgs.nak
       ]
       ++ optional cfg.pairing.enable cfg.pairing.package;
 
