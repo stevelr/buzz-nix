@@ -56,12 +56,12 @@
     "cargoHash": "sha256-wqzRdMkJp1Ed1PSmmlLxO30bLZLrhxNhAoJuwOtFIZY="
   },
   "ferron": {
-    "version": "3.0.0-beta.8",
+    "version": "3.0.0-beta.9",
     "owner": "ferronweb",
     "repo": "ferron",
-    "rev": "3.0.0-beta.8",
-    "sha256": "sha256-v4lTfd9SSfiyQ0R0xBhCiplxNxC3S5zUtr7ILil5sKg=",
-    "cargoHash": "sha256-2lvIZuxHhfMYPq4qN2Hx3qD2RR0g0DWAFSF/3202KNI="
+    "rev": "3.0.0-beta.9",
+    "sha256": "sha256-1rc54d9371XTOz4bnH59EjljLXrjDpD6NExnx3WLPr8=",
+    "cargoHash": "sha256-b37/z0Fl2Qm1vx+LCUJ7MC0EsjvrFvUvXY57VcBfs3U="
   },
   "minio": {
     "version": "2025-09-07T16-13-09Z",

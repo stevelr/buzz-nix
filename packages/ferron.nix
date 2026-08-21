@@ -10,7 +10,6 @@
   autoPatchelfHook,
   cmake,
   pkg-config,
-  perl,
   llvmPackages,
 }:
 
@@ -25,6 +24,7 @@ rustPlatform.buildRustPackage {
   src = fetchFromGitHub {
     inherit (release) owner repo rev;
     hash = release.sha256;
+    fetchSubmodules = true;
   };
 
   cargoHash = release.cargoHash;
@@ -32,7 +32,6 @@ rustPlatform.buildRustPackage {
     autoPatchelfHook
     cmake
     llvmPackages.clang
-    perl
     pkg-config
   ];
   buildInputs = [ stdenv.cc.cc.lib ];
