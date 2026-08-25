@@ -1,59 +1,59 @@
 {
   "buzz-acp": {
-    "version": "0.5.18",
+    "version": "0.5.19",
     "owner": "block",
     "repo": "buzz",
-    "rev": "desktop-v0.5.18",
-    "sha256": "sha256-PaTKCvHSgfWBF8Mp4nCGesk6XVdJplHE+euPb+LAZ9k=",
-    "cargoHash": "sha256-wqzRdMkJp1Ed1PSmmlLxO30bLZLrhxNhAoJuwOtFIZY="
+    "rev": "desktop-v0.5.19",
+    "sha256": "sha256-Tke1zrGtyBLhN/KfAaY22QUU8ciY6/Qs92QsLwGQ03Y=",
+    "cargoHash": "sha256-y067FJWvsJAe6mvtnLPSW1YK0/gcBrKuZX45OCO8/2U="
   },
   "buzz-cli": {
-    "version": "0.5.18",
+    "version": "0.5.19",
     "owner": "block",
     "repo": "buzz",
-    "rev": "desktop-v0.5.18",
-    "sha256": "sha256-PaTKCvHSgfWBF8Mp4nCGesk6XVdJplHE+euPb+LAZ9k=",
-    "cargoHash": "sha256-wqzRdMkJp1Ed1PSmmlLxO30bLZLrhxNhAoJuwOtFIZY="
+    "rev": "desktop-v0.5.19",
+    "sha256": "sha256-Tke1zrGtyBLhN/KfAaY22QUU8ciY6/Qs92QsLwGQ03Y=",
+    "cargoHash": "sha256-y067FJWvsJAe6mvtnLPSW1YK0/gcBrKuZX45OCO8/2U="
   },
   "buzz-admin": {
-    "version": "0.5.18",
+    "version": "0.5.19",
     "owner": "block",
     "repo": "buzz",
-    "rev": "desktop-v0.5.18",
-    "sha256": "sha256-PaTKCvHSgfWBF8Mp4nCGesk6XVdJplHE+euPb+LAZ9k=",
-    "cargoHash": "sha256-wqzRdMkJp1Ed1PSmmlLxO30bLZLrhxNhAoJuwOtFIZY="
+    "rev": "desktop-v0.5.19",
+    "sha256": "sha256-Tke1zrGtyBLhN/KfAaY22QUU8ciY6/Qs92QsLwGQ03Y=",
+    "cargoHash": "sha256-y067FJWvsJAe6mvtnLPSW1YK0/gcBrKuZX45OCO8/2U="
   },
   "buzz-agent": {
-    "version": "0.5.18",
+    "version": "0.5.19",
     "owner": "block",
     "repo": "buzz",
-    "rev": "desktop-v0.5.18",
-    "sha256": "sha256-PaTKCvHSgfWBF8Mp4nCGesk6XVdJplHE+euPb+LAZ9k=",
-    "cargoHash": "sha256-wqzRdMkJp1Ed1PSmmlLxO30bLZLrhxNhAoJuwOtFIZY="
+    "rev": "desktop-v0.5.19",
+    "sha256": "sha256-Tke1zrGtyBLhN/KfAaY22QUU8ciY6/Qs92QsLwGQ03Y=",
+    "cargoHash": "sha256-y067FJWvsJAe6mvtnLPSW1YK0/gcBrKuZX45OCO8/2U="
   },
   "buzz-sdk": {
-    "version": "0.5.18",
+    "version": "0.5.19",
     "owner": "block",
     "repo": "buzz",
-    "rev": "desktop-v0.5.18",
-    "sha256": "sha256-PaTKCvHSgfWBF8Mp4nCGesk6XVdJplHE+euPb+LAZ9k=",
-    "cargoHash": "sha256-wqzRdMkJp1Ed1PSmmlLxO30bLZLrhxNhAoJuwOtFIZY="
+    "rev": "desktop-v0.5.19",
+    "sha256": "sha256-Tke1zrGtyBLhN/KfAaY22QUU8ciY6/Qs92QsLwGQ03Y=",
+    "cargoHash": "sha256-y067FJWvsJAe6mvtnLPSW1YK0/gcBrKuZX45OCO8/2U="
   },
   "buzz-relay": {
-    "version": "0.5.18",
+    "version": "0.5.19",
     "owner": "block",
     "repo": "buzz",
-    "rev": "desktop-v0.5.18",
-    "sha256": "sha256-PaTKCvHSgfWBF8Mp4nCGesk6XVdJplHE+euPb+LAZ9k=",
-    "cargoHash": "sha256-wqzRdMkJp1Ed1PSmmlLxO30bLZLrhxNhAoJuwOtFIZY="
+    "rev": "desktop-v0.5.19",
+    "sha256": "sha256-Tke1zrGtyBLhN/KfAaY22QUU8ciY6/Qs92QsLwGQ03Y=",
+    "cargoHash": "sha256-y067FJWvsJAe6mvtnLPSW1YK0/gcBrKuZX45OCO8/2U="
   },
   "buzz-pair-relay": {
-    "version": "0.5.18",
+    "version": "0.5.19",
     "owner": "block",
     "repo": "buzz",
-    "rev": "desktop-v0.5.18",
-    "sha256": "sha256-PaTKCvHSgfWBF8Mp4nCGesk6XVdJplHE+euPb+LAZ9k=",
-    "cargoHash": "sha256-wqzRdMkJp1Ed1PSmmlLxO30bLZLrhxNhAoJuwOtFIZY="
+    "rev": "desktop-v0.5.19",
+    "sha256": "sha256-Tke1zrGtyBLhN/KfAaY22QUU8ciY6/Qs92QsLwGQ03Y=",
+    "cargoHash": "sha256-y067FJWvsJAe6mvtnLPSW1YK0/gcBrKuZX45OCO8/2U="
   },
   "ferron": {
     "version": "3.0.0-beta.9",
