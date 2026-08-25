@@ -14,6 +14,11 @@ SPDX-License-Identifier: Apache-2.0
 
 - An agent host that connects to an existing relay imports `nixosModules.buzz-acp` and follows [HEADLESS_AGENT_SETUP.md](./HEADLESS_AGENT_SETUP.md). It does not need to run a relay.
 
+The agent module can publish an attested profile and agent-directory record
+before starting the harness. Registration is opt-in because its
+`BUZZ_AUTH_TAG` must be created by the owner and supplied outside the Nix
+store.
+
 ## Add the flake
 
 ```nix

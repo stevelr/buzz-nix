@@ -33,6 +33,10 @@ Generate a distinct agent keypair
 nix run .#buzz-admin -- generate-key
 ```
 
+The command labels a 64-character hexadecimal public key and its corresponding
+secret key. Use the secret as `BUZZ_PRIVATE_KEY` and the public key wherever
+this guide says `<agent-public-key>`.
+
 and add its public key as a relay member as described in [The relay setup guide](./RELAY_SETUP.md#identities-and-membership). Put the private key on the agent machine in a root-readable environment file:
 
 ```text
@@ -48,6 +52,11 @@ Error: relay connect error: Auth failed: restricted: not a relay member
 and restarts every five seconds, and because a failed unit fails the activation, every subsequent `nixos-rebuild switch` exits non-zero until the key is added.
 
 Additional API keys or other environment variables needed by agents can be set either in this file or in the buzz app in the agent settings. If you have a claude code or codex subscription, it is not necessary to set api keys in the environment because you can authenticate those services through the buzz app.
+
+Do not set `BUZZ_RELAY_URL` or `BUZZ_ACP_*` variables in the environment file.
+Systemd environment files override the module's non-secret environment, so
+those names would replace declarative relay, harness, or authorization
+settings.
 
 Provision the file as `root:root` with mode `0400` or `0600`. The systemd service manager reads `EnvironmentFile` before starting the process, so the agent account does not need direct access. Secret managers such as sops-nix or agenix can create `/run/secrets/buzz-agent.env` with those permissions at activation time.
 
@@ -137,11 +146,17 @@ The `--role bot` distinction is about authorization. It does not change how the 
 
 ## Give the agent an identity
 
-A correctly configured agent still has no profile of its own. `buzz-acp` never publishes a `kind:0` metadata event, so until one is published the agent appears everywhere as a bare hex pubkey with no name, and nothing records whose agent it is.
+A correctly configured harness still has no profile or agent-directory record
+of its own. `buzz-acp` does not publish either record. Enable
+`services.buzz-acp.registration` to publish them before the harness starts.
 
-Both halves are fixed with the Buzz CLI, run under the *agent* identity. Order matters, because the attestation has to be in place before the profile is published.
+Registration needs an owner attestation before it can publish either record.
+Create the attestation on a machine controlled by the owner; the owner private
+key must not be copied to the agent host.
 
-First compute a NIP-OA attestation. It is signed by the owner over the agent's public key, so it needs the owner secret:
+First compute a NIP-OA attestation. It is signed by the owner over the agent's
+public key, so both command arguments are hexadecimal: the owner's 64-character
+secret key followed by the agent's 64-character public key.
 
 ```console
 nix run github:stevelr/buzz-nix#compute-auth-tag -- <owner-secret> <agent-public-key>
@@ -154,25 +169,51 @@ The secret is passed as an argument and is briefly visible in the process list, 
 BUZZ_AUTH_TAG='["auth","<owner-public-key>","","<signature>"]'
 ```
 
-Restart the service and confirm the agent resolves its owner from the attestation rather than from `agentOwner`:
+Configure the profile and directory policy:
+
+```nix
+services.buzz-acp.registration = {
+  enable = true;
+  displayName = "agent-name";
+  about = "what this agent is for";
+  channelAddPolicy = "owner_only";
+};
+```
+
+The registration unit uses the agent key and attestation from
+`environmentFile`. It publishes an attested kind:0 profile and a kind:10100
+agent-directory record, then remains active so ordinary harness restarts do not
+republish them. A boot or configuration change runs registration again; both
+events are replaceable.
+
+Apply the configuration and confirm registration completed before the harness
+started:
 
 ```console
-sudo systemctl restart buzz-acp
+sudo nixos-rebuild switch --flake .#agent-host
+sudo systemctl status buzz-acp-registration buzz-acp
 ```
+
+The harness log should resolve its owner from the attestation:
 
 ```text
 INFO buzz_acp: owner resolved from BUZZ_AUTH_TAG: <owner-public-key>
 ```
 
-Then publish the profile, in a shell that has both `BUZZ_PRIVATE_KEY` and `BUZZ_AUTH_TAG` from that file:
+The CLI injects the auth tag into both registration events. Other clients use
+the kind:0 tag to verify the agent's owner, while kind:10100 makes the identity
+discoverable as an agent. Registration fails instead of publishing an
+unattested identity when `BUZZ_AUTH_TAG` is absent or invalid.
 
-```console
-buzz users set-profile --name "agent-name" --about "what this agent is for"
-```
+`BUZZ_AUTH_TAG` takes priority over the `agentOwner` option. `agentOwner`
+remains useful when registration is disabled, but it does not attest the
+agent's profile. Some commands, including `buzz agents draft-create`, require
+the tag and will not run without it.
 
-The CLI injects the auth tag into every event it signs, so this `kind:0` event carries the owner attestation with it. That is what other clients read to verify the agent belongs to you, and it is why the tag must be set before the profile is published rather than after. The CLI rejects a malformed or unverifiable tag outright, so a successful publish also confirms the attestation is valid for that keypair.
-
-`BUZZ_AUTH_TAG` takes priority over the `agentOwner` option, which remains useful as a fallback. Some commands, including `buzz agents draft-create`, require the tag and will not run without it.
+Registration does not create an owner-authored managed-agent policy. A
+standalone NixOS service can participate in channels and report presence
+without becoming a runtime controlled by Buzz Desktop. Keep the owner private
+key on the owner's machine; do not add it to the agent's environment file.
 
 ## Use another ACP agent
 

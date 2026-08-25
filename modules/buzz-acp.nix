@@ -15,6 +15,7 @@
 
 let
   inherit (lib)
+    escapeShellArgs
     literalExpression
     mkEnableOption
     mkIf
@@ -47,6 +48,29 @@ let
   ++ optional cfg.codexAcp.enable cfg.codexAcp.package
   ++ optional cfg.claudeAcp.enable cfg.claudeAcp.package
   ++ cfg.extraPackages;
+  registrationProfileArgs = [
+    "users"
+    "set-profile"
+    "--name"
+    cfg.registration.displayName
+  ]
+  ++ optional (cfg.registration.about != null) "--about"
+  ++ optional (cfg.registration.about != null) cfg.registration.about
+  ++ optional (cfg.registration.avatar != null) "--avatar"
+  ++ optional (cfg.registration.avatar != null) cfg.registration.avatar
+  ++ optional (cfg.registration.nip05 != null) "--nip05"
+  ++ optional (cfg.registration.nip05 != null) cfg.registration.nip05;
+  registrationScript = pkgs.writeShellScript "buzz-acp-register" ''
+    if [ -z "''${BUZZ_AUTH_TAG:-}" ]; then
+      echo "buzz-acp registration requires BUZZ_AUTH_TAG in ${cfg.environmentFile}" >&2
+      exit 1
+    fi
+
+    export BUZZ_RELAY_URL=${lib.escapeShellArg cfg.relayUrl}
+    ${self.packages.${system}.buzz-cli}/bin/buzz ${escapeShellArgs registrationProfileArgs}
+    ${self.packages.${system}.buzz-cli}/bin/buzz channels set-add-policy \
+      --policy ${lib.escapeShellArg cfg.registration.channelAddPolicy}
+  '';
 in
 {
   options.services.buzz-acp = {
@@ -69,7 +93,10 @@ in
       type = types.nullOr types.str;
       default = null;
       example = "/run/secrets/buzz-agent.env";
-      description = "Root-managed environment file containing BUZZ_PRIVATE_KEY and other credentials.";
+      description = ''
+        Root-managed environment file containing BUZZ_PRIVATE_KEY and other
+        credentials. Registration also requires BUZZ_AUTH_TAG.
+      '';
     };
 
     user = mkOption {
@@ -152,6 +179,48 @@ in
       description = "Number of parallel ACP agent subprocesses.";
     };
 
+    registration = {
+      enable = mkEnableOption "declarative Buzz agent identity registration";
+
+      displayName = mkOption {
+        type = types.str;
+        default = "";
+        example = "build-agent";
+        description = "Display name published in the agent's attested kind:0 profile.";
+      };
+
+      about = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "Build and test agent";
+        description = "Optional profile description.";
+      };
+
+      avatar = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "https://example.test/agent.png";
+        description = "Optional profile avatar URL.";
+      };
+
+      nip05 = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "agent@example.test";
+        description = "Optional NIP-05 profile identifier.";
+      };
+
+      channelAddPolicy = mkOption {
+        type = types.enum [
+          "anyone"
+          "owner_only"
+          "nobody"
+        ];
+        default = "owner_only";
+        description = "Policy published in the agent's kind:10100 directory record.";
+      };
+    };
+
     codexAcp = {
       enable = mkEnableOption "the codex-acp adapter";
       package = mkOption {
@@ -230,6 +299,10 @@ in
         assertion = !(cfg.codexAcp.enable && cfg.claudeAcp.enable);
         message = "services.buzz-acp.codexAcp and claudeAcp cannot both be enabled";
       }
+      {
+        assertion = !cfg.registration.enable || cfg.registration.displayName != "";
+        message = "services.buzz-acp.registration.displayName must not be empty when registration is enabled";
+      }
     ];
 
     users.groups.${cfg.group} = mkIf cfg.createUser { inherit (cfg) gid; };
@@ -250,8 +323,12 @@ in
     systemd.services.buzz-acp = {
       description = "Buzz ACP headless agent";
       wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
+      after = [
+        "network-online.target"
+      ]
+      ++ optional cfg.registration.enable "buzz-acp-registration.service";
       wants = [ "network-online.target" ];
+      requires = optional cfg.registration.enable "buzz-acp-registration.service";
       path = runtimePackages;
       environment =
         cfg.extraEnvironment
@@ -283,6 +360,28 @@ in
         PrivateTmp = true;
         ProtectSystem = "strict";
         ReadWritePaths = [ cfg.stateDir ];
+      };
+    };
+
+    systemd.services.buzz-acp-registration = mkIf cfg.registration.enable {
+      description = "Register Buzz ACP agent identity";
+      before = [ "buzz-acp.service" ];
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      environment = cfg.extraEnvironment // {
+        BUZZ_RELAY_URL = cfg.relayUrl;
+      };
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        User = cfg.user;
+        Group = cfg.group;
+        EnvironmentFile = cfg.environmentFile;
+        ExecStart = registrationScript;
+        WorkingDirectory = cfg.stateDir;
+        NoNewPrivileges = true;
+        PrivateTmp = true;
+        ProtectSystem = "strict";
       };
     };
   };

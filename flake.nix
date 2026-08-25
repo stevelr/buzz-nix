@@ -149,6 +149,11 @@
                   relayUrl = "wss://relay.example.test";
                   environmentFile = "/run/keys/buzz-agent.env";
                   codexAcp.enable = true;
+                  registration = {
+                    enable = true;
+                    displayName = "Codex test agent";
+                    about = "Module evaluation fixture";
+                  };
                 };
               }
             ];
@@ -170,6 +175,8 @@
             ];
           };
           ferronConfig = pkgs.writeText "buzz-relay-ferron.conf" directRelay.config.services.buzz-relay.ferron.configText;
+          registrationScript =
+            codexAgent.config.systemd.services.buzz-acp-registration.serviceConfig.ExecStart;
         in
         {
           ferron-config =
@@ -196,10 +203,23 @@
             assert containerRelay.config.containers.buzz-relay.config.networking.nameservers == [ "1.1.1.1" ];
             assert !containerRelay.config.containers.buzz-relay.config.networking.useHostResolvConf;
             assert codexAgent.config.systemd.services ? buzz-acp;
+            assert codexAgent.config.systemd.services ? buzz-acp-registration;
+            assert builtins.elem "buzz-acp-registration.service"
+              codexAgent.config.systemd.services.buzz-acp.requires;
+            assert
+              codexAgent.config.systemd.services.buzz-acp-registration.environment.BUZZ_RELAY_URL
+              == "wss://relay.example.test";
+            assert
+              codexAgent.config.systemd.services.buzz-acp-registration.serviceConfig.EnvironmentFile
+              == "/run/keys/buzz-agent.env";
+            assert !(claudeAgent.config.systemd.services ? buzz-acp-registration);
             assert
               claudeAgent.config.systemd.services.buzz-acp.environment.BUZZ_ACP_AGENT_COMMAND
               == "${llm-agents.packages.${system}.claude-agent-acp}/bin/claude-agent-acp";
             pkgs.runCommand "buzz-nixos-module-evaluation" { } ''
+              grep -F 'BUZZ_AUTH_TAG' ${registrationScript}
+              grep -F 'users set-profile' ${registrationScript}
+              grep -F 'channels set-add-policy' ${registrationScript}
               touch "$out"
             '';
         }
