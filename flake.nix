@@ -89,6 +89,8 @@
             default = pkgs.mkShell {
               buildInputs = [
                 pkgs.nak
+                pkgs.python3 # for scripts/update-buzz-desktop
+                pkgs.git
                 self.packages.${system}.buzz-admin
               ];
             };

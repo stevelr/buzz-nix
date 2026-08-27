@@ -17,6 +17,7 @@ let
   inherit (lib)
     escapeShellArgs
     literalExpression
+    getExe
     mkEnableOption
     mkIf
     mkOption
@@ -41,7 +42,7 @@ let
     else
       cfg.agentArgs;
   runtimePackages = [
-    self.packages.${system}.buzz-cli
+    cfg.cliPackage
     self.packages.${system}.buzz-agent
     pkgs.nak
   ]
@@ -60,17 +61,18 @@ let
   ++ optional (cfg.registration.avatar != null) cfg.registration.avatar
   ++ optional (cfg.registration.nip05 != null) "--nip05"
   ++ optional (cfg.registration.nip05 != null) cfg.registration.nip05;
-  registrationScript = pkgs.writeShellScript "buzz-acp-register" ''
-    if [ -z "''${BUZZ_AUTH_TAG:-}" ]; then
-      echo "buzz-acp registration requires BUZZ_AUTH_TAG in ${cfg.environmentFile}" >&2
-      exit 1
-    fi
-
-    export BUZZ_RELAY_URL=${lib.escapeShellArg cfg.relayUrl}
-    ${self.packages.${system}.buzz-cli}/bin/buzz ${escapeShellArgs registrationProfileArgs}
-    ${self.packages.${system}.buzz-cli}/bin/buzz channels set-add-policy \
-      --policy ${lib.escapeShellArg cfg.registration.channelAddPolicy}
-  '';
+  registrationScript =
+    cliPkg:
+    (pkgs.writeShellScript "buzz-acp-register" ''
+      if [ -z "''${BUZZ_AUTH_TAG:-}" ]; then
+        echo "buzz-acp registration requires BUZZ_AUTH_TAG in ${cfg.environmentFile}" >&2
+        exit 1
+      fi
+      export BUZZ_RELAY_URL=${lib.escapeShellArg cfg.relayUrl}
+      ${getExe cliPkg} ${escapeShellArgs registrationProfileArgs}
+      ${getExe cliPkg} channels set-add-policy \
+        --policy ${lib.escapeShellArg cfg.registration.channelAddPolicy}
+    '');
 in
 {
   options.services.buzz-acp = {
@@ -81,6 +83,13 @@ in
       default = self.packages.${system}.buzz-acp;
       defaultText = literalExpression "buzz-nix.packages.\${pkgs.system}.buzz-acp";
       description = "Buzz ACP harness package.";
+    };
+
+    cliPackage = mkOption {
+      type = types.package;
+      default = self.packages.${system}.buzz-cli;
+      defaultText = literalExpression "buzz-nix.packages.\${pkgs.system}.buzz-cli";
+      description = "Command-line client for Buzz";
     };
 
     relayUrl = mkOption {
@@ -352,7 +361,7 @@ in
         User = cfg.user;
         Group = cfg.group;
         EnvironmentFile = cfg.environmentFile;
-        ExecStart = "${cfg.package}/bin/buzz-acp";
+        ExecStart = "${getExe cfg.package}";
         WorkingDirectory = cfg.stateDir;
         Restart = "always";
         RestartSec = 5;
@@ -377,7 +386,7 @@ in
         User = cfg.user;
         Group = cfg.group;
         EnvironmentFile = cfg.environmentFile;
-        ExecStart = registrationScript;
+        ExecStart = registrationScript cfg.cliPackage;
         WorkingDirectory = cfg.stateDir;
         NoNewPrivileges = true;
         PrivateTmp = true;
