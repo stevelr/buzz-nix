@@ -28,6 +28,14 @@ let
   cfg = config.services.buzz-relay;
   idType = types.ints.between 1 65535;
   baseIdType = types.ints.between 1 65531;
+  maxLinkNameLen = 15; # kernel limits interface names to 15 chars
+
+  # Host side of the veth pair
+  hostlink = "ve-${cfg.container.name}";
+  useUnmanagedHostLink =
+    cfg.container.unmanagedHostLink
+    && cfg.container.hostAddress != null
+    && config.systemd.network.enable;
 
   relayEnvironmentFile = "${cfg.secretsDir}/relay.env";
   redisPasswordFile = "${cfg.secretsDir}/redis-password";
@@ -140,15 +148,15 @@ in
 
     relayPackage = mkOption {
       type = types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.buzz-relay;
-      defaultText = literalExpression "buzz-nix.packages.\${pkgs.system}.buzz-relay";
+      default = pkgs.callPackage "${self}/packages/buzz-relay.nix" { };
+      defaultText = literalExpression ''pkgs.callPackage "''${buzz-nix}/packages/buzz-relay.nix" { }'';
       description = "Package providing the buzz-relay server binary.";
     };
 
     adminPackage = mkOption {
       type = types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.buzz-admin;
-      defaultText = literalExpression "buzz-nix.packages.\${pkgs.system}.buzz-admin";
+      default = pkgs.callPackage "${self}/packages/buzz-admin.nix" { };
+      defaultText = literalExpression ''pkgs.callPackage "''${buzz-nix}/packages/buzz-admin.nix" { }'';
       description = "Package providing the buzz-admin operator CLI.";
     };
 
@@ -196,7 +204,7 @@ in
     corsOrigins = mkOption {
       type = types.listOf types.str;
       default = [ (lib.removeSuffix "/media" cfg.mediaBaseUrl) ];
-      defaultText = literalExpression ''[ (lib.removeSuffix "/media" config.services.buzz-relay.mediaBaseUrl) ]'';
+      defaultText = literalExpression ''[ (lib.removeSuffix "/media" cfg.mediaBaseUrl) ]'';
       description = "Origins allowed to call the relay HTTP API.";
     };
 
@@ -327,13 +335,13 @@ in
       };
       uid = mkOption {
         type = idType;
-        default = cfg.baseUid + 1;
+        default = config.ids.uids.postgres;
         defaultText = literalExpression "config.services.buzz-relay.baseUid + 1";
         description = "PostgreSQL service UID.";
       };
       gid = mkOption {
         type = idType;
-        default = cfg.baseGid + 1;
+        default = config.ids.gids.postgres;
         defaultText = literalExpression "config.services.buzz-relay.baseGid + 1";
         description = "PostgreSQL service GID.";
       };
@@ -389,8 +397,8 @@ in
     minio = {
       package = mkOption {
         type = types.package;
-        default = self.packages.${pkgs.stdenv.hostPlatform.system}.minio;
-        defaultText = literalExpression "buzz-nix.packages.\${pkgs.system}.minio";
+        default = pkgs.callPackage "${self}/packages/minio.nix" { };
+        defaultText = literalExpression ''pkgs.callPackage "''${buzz-nix}/packages/minio.nix" { }'';
         description = "MinIO server package pinned for Buzz.";
       };
       clientPackage = mkOption {
@@ -474,8 +482,8 @@ in
       };
       package = mkOption {
         type = types.package;
-        default = self.packages.${pkgs.stdenv.hostPlatform.system}.buzz-pair-relay;
-        defaultText = literalExpression "buzz-nix.packages.\${pkgs.system}.buzz-pair-relay";
+        default = pkgs.callPackage "${self}/packages/buzz-pair-relay.nix" { };
+        defaultText = literalExpression ''pkgs.callPackage "''${buzz-nix}/packages/buzz-pair-relay.nix" { }'';
         description = "Package providing the buzz-pair-relay sidecar binary.";
       };
       listenAddress = mkOption {
@@ -500,8 +508,8 @@ in
       enable = mkEnableOption "Ferron reverse proxy for the Buzz relay";
       package = mkOption {
         type = types.package;
-        default = self.packages.${pkgs.stdenv.hostPlatform.system}.ferron;
-        defaultText = literalExpression "buzz-nix.packages.\${pkgs.system}.ferron";
+        default = pkgs.callPackage "${self}/packages/ferron.nix" { };
+        defaultText = literalExpression ''pkgs.callPackage "''${buzz-nix}/packages/ferron.nix" { }'';
         description = "Ferron package to run.";
       };
       domain = mkOption {
@@ -630,11 +638,15 @@ in
     };
 
     container = {
-      enable = mkEnableOption "a NixOS systemd-nspawn container for the relay";
+      enable = mkOption {
+        type = types.bool;
+        default = true;
+        description = "run the relay service in its own isolated container";
+      };
       name = mkOption {
         type = types.str;
         default = "buzz-relay";
-        description = "NixOS container name.";
+        description = "NixOS container name. Use a name that contains 12 or fewer characters, to avoid exceeding the kernel's maximum interface name length.";
       };
       autoStart = mkOption {
         type = types.bool;
@@ -672,11 +684,24 @@ in
         default = "10.231.136.2";
         description = "Container-side address of the veth pair.";
       };
+      unmanagedHostLink = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Tell systemd-networkd to ignore the veth network.
+          Without this setting, nixos automatically assigns a second address in 172.16.0.0/12,
+          and tries to start a dhcp server.
+          The problem only occurs if hostAddress is non-null and host uses systemd-networkd.
+          Probably a bug in systemd-networkd, issue/pr to follow.
+        '';
+      };
+
       nameservers = mkOption {
         type = types.listOf types.str;
-        default = [ "1.1.1.1" ];
-        description = "DNS nameservers written to the container's resolv.conf.";
+        default = if cfg.container.hostAddress != null then [ cfg.container.hostAddress ] else [ ];
+        description = "DNS nameservers written to the container's resolv.conf. Defaults to host address.";
       };
+
       privateUsers = mkOption {
         type = types.either types.ints.u32 (
           types.enum [
@@ -733,7 +758,29 @@ in
         description = "Additional host-to-container port forwards.";
       };
       extraBindMounts = mkOption {
-        type = types.attrs;
+        type = types.attrsOf (
+          types.submodule {
+            options = {
+              mountPoint = mkOption {
+                example = "/var/lib/buzz-relay";
+                default = null;
+                type = types.nullOr types.str;
+                description = "Mount point on the container file system. Defaults to the attribute name";
+              };
+              hostPath = mkOption {
+                default = null;
+                example = "/var/lib/buzz-relay";
+                type = types.nullOr types.str;
+                description = "Location of the host path to be mounted.";
+              };
+              isReadOnly = mkOption {
+                default = true;
+                type = types.bool;
+                description = "Whether the mounted path will be mounted in read-only mode.";
+              };
+            };
+          }
+        );
         default = { };
         description = "Additional NixOS container bindMounts.";
       };
@@ -887,7 +934,24 @@ in
 
         {
           assertion = !(cfg.container.hostAddress != null && cfg.container.hostBridge != null);
-          message = "Either use container.hostAddress or container.hostBridge, but not both. (They cannot both be non-null)";
+          message = ''
+            Set either services.buzz-relay.container.hostAddress or container.hostBridge, not both.
+            If you're using a bridge, set hostAddress = null.
+          '';
+        }
+        {
+          assertion = cfg.container.hostBridge == null || cfg.container.privateNetwork;
+          message = "services.buzz-relay.container.hostBridge requires setting container.privateNetwork = true";
+        }
+        {
+          # accessing subnet requires CIDR prefix that is not /ew
+          assertion =
+            cfg.container.hostBridge == null
+            || (cfg.container.localAddress != null && lib.hasInfix "/" cfg.container.localAddress);
+          message = ''
+            services.buzz-relay.container.localAddress must include a subnet prefix length
+            (other than /32) to access the subnet.
+          '';
         }
         {
           assertion = builtins.match "[A-Za-z_][A-Za-z0-9_]*" cfg.postgres.database != null;
@@ -917,16 +981,45 @@ in
       ];
     }
 
+    {
+      # jemalloc (an optional allocator library used by the buzz binaries) needs memory
+      # overcommit; otherwise, in low-memory conditions, alloc can fail, preventing background save or replication.
+      # See https://github.com/jemalloc/jemalloc/issues/1328.
+      #
+      # vm.overcommit_memory is a host-wide setting, and must be set on a host.
+      # (If set within a container, it causes a logged failure because /proc/sys is read-only).
+      # Use mkDefault so we don't override a host's declared overcommit policy.
+      boot.kernel.sysctl."vm.overcommit_memory" = mkIf (!config.boot.isContainer) (lib.mkDefault 1);
+    }
+
     (mkIf cfg.container.enable {
       systemd.tmpfiles.rules = [
         "d '${cfg.container.hostDataDir}' 0711 root root -"
       ];
+
+      # Prevent systemd-networkd from managing the private veth net.
+      systemd.network.networks = mkIf useUnmanagedHostLink {
+        # Attribute name must alphabetically precede "80-container-ve.network"
+        "30-${hostlink}" = {
+          matchConfig.Name = hostlink;
+          linkConfig.Unmanaged = true;
+        };
+      };
+
+      # Linux kernel limits interface names to 15 chars.
+      # Our interface name is constructed from the prefix "ve-" + the container name.
+      warnings = lib.optional (useUnmanagedHostLink && builtins.stringLength hostlink > maxLinkNameLen) ''
+        ${hostlink} exceeds kernel's 15-character limit on interface names.
+        Either use a container name with 12 or fewer characters, or 
+        override the link name and set container.unmanagedHostLink=false. 
+      '';
 
       containers.${cfg.container.name} = {
         inherit (cfg.container)
           autoStart
           ephemeral
           hostAddress
+          hostBridge
           localAddress
           privateNetwork
           privateUsers
@@ -943,16 +1036,27 @@ in
             self.nixosModules.buzz-relay
             cfg.container.extraConfig
           ];
-          nixpkgs.pkgs = pkgs;
+          nixpkgs.pkgs = lib.mkDefault pkgs;
           networking = {
             inherit (cfg.container) nameservers;
             useHostResolvConf = false;
           };
-          services.buzz-relay = serviceValues // {
-            container.enable = false;
-          };
+          # mkDefault lowers this whole definition to priority 1000, which the
+          # module system pushes down to every leaf. Without it, an option set
+          # from container.extraConfig collides with the value spliced in here at
+          # equal priority ("conflicting definition values") instead of winning.
+          # rootDataDir stays at normal priority: it must match the bind mount.
+          services.buzz-relay = mkMerge [
+            (lib.mkDefault (
+              serviceValues
+              // {
+                container.enable = false;
+              }
+            ))
+            { inherit (cfg) rootDataDir; }
+          ];
           environment.systemPackages = cfg.container.extraPackages;
-          system.stateVersion = "26.05";
+          system.stateVersion = lib.mkDefault "26.05";
         };
       };
     })
@@ -991,8 +1095,8 @@ in
         extraGroups = cfg.ferron.extraGroups;
       };
 
-      ids.uids.postgres = lib.mkForce cfg.postgres.uid;
-      ids.gids.postgres = lib.mkForce cfg.postgres.gid;
+      ids.uids.postgres = lib.mkDefault cfg.postgres.uid;
+      ids.gids.postgres = lib.mkDefault cfg.postgres.gid;
       users.users.postgres.isSystemUser = true;
 
       services.postgresql = {
@@ -1023,7 +1127,13 @@ in
       ]
       ++ optional cfg.pairing.enable cfg.pairing.package;
 
-      networking.nftables.enable = true;
+      # Own the firewall backend only when we own the whole system, i.e. inside
+      # the container; never on a host that is running the relay directly.
+      # cfg.container.enable cannot express this: it is false in both cases,
+      # because the container's own config sets container.enable = false.
+      # mkDefault so a system that already picked a backend wins rather than
+      # failing with conflicting definition values.
+      networking.nftables.enable = mkIf config.boot.isContainer (lib.mkDefault true);
       networking.firewall.allowedTCPPorts = mkIf cfg.openFirewall (
         if cfg.ferron.enable then
           [ cfg.ferron.httpPort ] ++ optional cfg.ferron.tls.enable cfg.ferron.httpsPort
@@ -1044,12 +1154,6 @@ in
         "d '${cfg.ferron.dataDir}' 0750 ${cfg.ferron.user} ${cfg.ferron.group} -"
       ];
 
-      # needed for minio
-      # Memory overcommit must be enabled! Without it, a background save or replication
-      # may fail under low memory condition. Being disabled, it can also cause failures
-      # see https://github.com/jemalloc/jemalloc/issues/1328.
-      boot.kernel.sysctl."vm.overcommit_memory" = 1;
-
       systemd.services = {
         buzz-relay-secrets = {
           description = "Generate persistent Buzz relay credentials";
@@ -1069,6 +1173,7 @@ in
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
+            PrivateTmp = true;
           };
           script = ''
             set -euo pipefail

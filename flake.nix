@@ -38,8 +38,8 @@
             buzz-relay = pkgs.callPackage ./packages/buzz-relay.nix { };
             buzz-pair-relay = pkgs.callPackage ./packages/buzz-pair-relay.nix { };
             compute-auth-tag = pkgs.callPackage ./packages/compute-auth-tag.nix { };
-            ferron = pkgs.callPackage ./packages/ferron.nix { };
-            minio = pkgs.callPackage ./packages/minio.nix { };
+            buzz-ferron = pkgs.callPackage ./packages/ferron.nix { };
+            buzz-minio = pkgs.callPackage ./packages/minio.nix { };
           in
           {
             inherit
@@ -49,9 +49,9 @@
               buzz-agent
               buzz-relay
               buzz-pair-relay
+              buzz-ferron
               compute-auth-tag
-              ferron
-              minio
+              buzz-minio
               ;
             default = buzz-cli;
           }
@@ -109,6 +109,30 @@
               {
                 boot.isContainer = true;
                 system.stateVersion = "26.05";
+                services.buzz-relay = {
+                  enable = true;
+                  container.enable = false;
+                  ferron = {
+                    enable = true;
+                    domain = "relay.example.test";
+                    tls.enable = false;
+                  };
+                };
+              }
+            ];
+          };
+          # vm.overcommit_memory should be applied to host when relay container is enabled
+          hostRelay = nixpkgs.lib.nixosSystem {
+            inherit system;
+            modules = [
+              self.nixosModules.buzz-relay
+              {
+                system.stateVersion = "26.05";
+                boot.loader.grub.enable = false;
+                fileSystems."/" = {
+                  device = "/dev/disk/by-label/nixos";
+                  fsType = "ext4";
+                };
                 services.buzz-relay = {
                   enable = true;
                   ferron = {
@@ -184,7 +208,7 @@
           ferron-config =
             pkgs.runCommand "buzz-relay-ferron-config"
               {
-                nativeBuildInputs = [ self.packages.${system}.ferron ];
+                nativeBuildInputs = [ self.packages.${system}.buzz-ferron ];
               }
               ''
                 ferron validate -c ${ferronConfig}
@@ -197,13 +221,20 @@
               true;
             assert builtins.seq codexAgent.config.system.build.toplevel.drvPath true;
             assert builtins.seq claudeAgent.config.system.build.toplevel.drvPath true;
+            assert builtins.seq hostRelay.config.system.build.toplevel.drvPath true;
             assert directRelay.config.systemd.services ? buzz-relay;
             assert directRelay.config.systemd.services ? ferron;
             assert containerRelay.config.containers ? buzz-relay;
             assert
               containerRelay.config.containers.buzz-relay.config.services.buzz-relay.container.enable == false;
-            assert containerRelay.config.containers.buzz-relay.config.networking.nameservers == [ "1.1.1.1" ];
+            assert
+              builtins.length containerRelay.config.containers.buzz-relay.config.networking.nameservers > 0;
             assert !containerRelay.config.containers.buzz-relay.config.networking.useHostResolvConf;
+            assert hostRelay.config.boot.kernel.sysctl."vm.overcommit_memory" == 1;
+            assert hostRelay.config.containers.buzz-relay.config.boot.isContainer;
+            assert !(hostRelay.config.containers.buzz-relay.config.boot.kernel.sysctl ? "vm.overcommit_memory");
+            assert !(directRelay.config.boot.kernel.sysctl ? "vm.overcommit_memory");
+            assert !(containerRelay.config.boot.kernel.sysctl ? "vm.overcommit_memory");
             assert codexAgent.config.systemd.services ? buzz-acp;
             assert codexAgent.config.systemd.services ? buzz-acp-registration;
             assert builtins.elem "buzz-acp-registration.service"

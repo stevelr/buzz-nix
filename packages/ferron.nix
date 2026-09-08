@@ -18,7 +18,7 @@ let
   release = versions.ferron;
 in
 rustPlatform.buildRustPackage {
-  pname = "ferron";
+  pname = "buzz-ferron";
   inherit (release) version;
 
   src = fetchFromGitHub {

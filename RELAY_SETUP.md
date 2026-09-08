@@ -37,7 +37,7 @@ nixosConfigurations.relay-host = nixpkgs.lib.nixosSystem {
           name = "buzz-relay";
           hostAddress = "10.231.136.1";
           localAddress = "10.231.136.2";
-          nameservers = [ "1.1.1.1" ];
+          nameservers = [ "1.1.1.1" ]; # default nameserver is host's address
 
           # Default persistence folder on host.
           # All services create permission-scoped folders below this.
@@ -62,7 +62,7 @@ nixosConfigurations.relay-host = nixpkgs.lib.nixosSystem {
 };
 ```
 
-Container mode disables `networking.useHostResolvConf` so a host-local resolver address is not copied into the private network namespace. `container.nameservers` supplies the container's resolver list and defaults to `[ "1.1.1.1" ]`.
+In container mode, the default upstream dns server is the hostAddress side of the veth pair. If host is running a dns server configured to listen on all interfaces, this should usually work. To force a dns server for the container, set to something like `["1.1.1.1"]`.
 
 ### Host routing and NAT
 

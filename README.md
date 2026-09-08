@@ -44,7 +44,7 @@ store.
 }
 ```
 
-Setting `services.buzz-relay.container.enable = false` runs the service bundle directly on its NixOS host. If the host already runs a PostgreSQL service, container should be enabled so the postgres services don't conflict.
+Setting `services.buzz-relay.container.enable = false` runs the service bundle directly on its NixOS host.
 
 ## Updating buzz
 
@@ -68,3 +68,9 @@ After rebuilding, restart the services.
 sudo systemctl restart container@buzz-relay.service
 sudo systemctl restart buzz-acp.service
 ```
+
+# Changes
+
+- Unreleased - 2026-09-08
+
+  - `container.enable` defaults to true
