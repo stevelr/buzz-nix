@@ -742,6 +742,11 @@ in
         default = { };
         description = "Additional NixOS configuration evaluated inside the container.";
       };
+      extraPackages = mkOption {
+        type = types.listOf types.package;
+        default = [ ];
+        description = "Additional packages to be installed in container, available to all processes";
+      };
     };
 
     autoMigrate = mkOption {
@@ -946,7 +951,8 @@ in
           services.buzz-relay = serviceValues // {
             container.enable = false;
           };
-          system.stateVersion = "25.11";
+          environment.systemPackages = cfg.container.extraPackages;
+          system.stateVersion = "26.05";
         };
       };
     })
