@@ -759,26 +759,30 @@ in
       };
       extraBindMounts = mkOption {
         type = types.attrsOf (
-          types.submodule {
-            options = {
-              mountPoint = mkOption {
-                example = "/var/lib/buzz-relay";
-                type = types.str;
-                description = "Mount point on the container file system. Defaults to the attribute name";
+          types.submodule (
+            { name, ... }:
+            {
+              options = {
+                mountPoint = mkOption {
+                  default = name;
+                  example = "/var/lib/buzz-relay";
+                  type = types.str;
+                  description = "Mount point on the container file system. Defaults to the attribute name";
+                };
+                hostPath = mkOption {
+                  default = null;
+                  example = "/var/lib/buzz-relay";
+                  type = types.nullOr types.str;
+                  description = "Location of the host path to be mounted.";
+                };
+                isReadOnly = mkOption {
+                  default = true;
+                  type = types.bool;
+                  description = "Whether the mounted path will be mounted in read-only mode.";
+                };
               };
-              hostPath = mkOption {
-                default = null;
-                example = "/var/lib/buzz-relay";
-                type = types.nullOr types.str;
-                description = "Location of the host path to be mounted.";
-              };
-              isReadOnly = mkOption {
-                default = true;
-                type = types.bool;
-                description = "Whether the mounted path will be mounted in read-only mode.";
-              };
-            };
-          }
+            }
+          )
         );
         default = { };
         description = "Additional NixOS container bindMounts.";
