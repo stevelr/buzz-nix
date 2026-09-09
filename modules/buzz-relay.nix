@@ -763,8 +763,7 @@ in
             options = {
               mountPoint = mkOption {
                 example = "/var/lib/buzz-relay";
-                default = null;
-                type = types.nullOr types.str;
+                type = types.str;
                 description = "Mount point on the container file system. Defaults to the attribute name";
               };
               hostPath = mkOption {
