@@ -16,6 +16,9 @@
   doCheck ? true,
   # Extra flags passed to the test harness (after `--`), e.g. `--skip <test>`.
   checkFlags ? [ ],
+  postPatch ? "",
+  # Extra tools the crate's tests need on PATH.
+  extraNativeCheckInputs ? [ ],
   # Build a cargo example rather than the crate's own binaries, and install it
   # as `binary`. Cargo's --example selector suppresses normal binary targets.
   example ? null,
@@ -46,10 +49,10 @@ rustPlatform.buildRustPackage {
     example
   ];
   cargoTestFlags = [ "-p=${component}" ];
-  inherit doCheck checkFlags;
+  inherit doCheck checkFlags postPatch;
 
   nativeBuildInputs = [ pkg-config ];
-  nativeCheckInputs = [ cacert ];
+  nativeCheckInputs = [ cacert ] ++ extraNativeCheckInputs;
   buildInputs = [ openssl ];
   SSL_CERT_FILE = "${cacert}/etc/ssl/certs/ca-bundle.crt";
 
@@ -66,6 +69,10 @@ rustPlatform.buildRustPackage {
     homepage = "https://github.com/block/buzz";
     license = lib.licenses.asl20;
     mainProgram = binary;
-    platforms = lib.platforms.unix;
+    # matches systems in flake.nix. Other platforms might work but are untested.
+    platforms = [
+      "aarch64-linux"
+      "x86_64-linux"
+    ];
   };
 }

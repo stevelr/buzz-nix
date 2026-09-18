@@ -1,9 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Steve Schoettler
 #
 # SPDX-License-Identifier: Apache-2.0
-
 {
-  description = "Nix packages and NixOS modules for Buzz relays and headless agents";
+  description = "Nix packages and modules for Buzz relays and headless agents";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -21,6 +20,11 @@
       ...
     }:
     let
+      # The supported platform list is limited by:
+      #  - platforms supported by blocks/buzz
+      #  - nix modules depend on nix and systemd
+      #  - ferron is linux-only (although other proxies could be used)
+      #  - testing (AFAIK, limited to x86_64-linux and aarch64-linux)
       systems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -150,7 +154,7 @@
               self.nixosModules.buzz-relay
               {
                 boot.isContainer = true;
-                system.stateVersion = "26.06";
+                system.stateVersion = "26.05";
                 services.buzz-relay = {
                   enable = true;
                   container.enable = true;
