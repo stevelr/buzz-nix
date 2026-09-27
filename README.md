@@ -46,6 +46,17 @@ store.
 
 Setting `services.buzz-relay.container.enable = false` runs the service bundle directly on its NixOS host.
 
+## Versioning
+
+buzz-nix releases use independent `vMAJOR.MINOR.PATCH` tags, starting at
+`v1.0.0`; the release version is recorded in `VERSION`. Major releases contain
+breaking module or flake interface changes, minor releases add compatible
+features, and patch releases contain compatible fixes. Packaged Buzz versions
+and source revisions are recorded separately in `versions.json` and continue
+to track upstream releases.
+
+See [CHANGELOG.md](./CHANGELOG.md) for release history and migration notes.
+
 ## Updating buzz
 
 An updater script is provided to simplify updating to new buzz-desktop release versions. This script updates all buzz- related package versions, package hashes, and cargo hashes, and rebuilds the packages,
@@ -66,11 +77,5 @@ After rebuilding, restart the services.
 
 ```shell
 sudo systemctl restart container@buzz-relay.service
-sudo systemctl restart buzz-acp.service
+sudo systemctl restart buzz-acp-codex.service
 ```
-
-# Changes
-
-- Unreleased - 2026-09-08
-
-  - `container.enable` defaults to true

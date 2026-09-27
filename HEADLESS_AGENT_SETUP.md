@@ -69,7 +69,7 @@ Copy the relay owner's public key from the relay server's `secrets/owner-public-
 {
   imports = [ inputs.buzz-nix.nixosModules.buzz-acp ];
 
-  services.buzz-acp = {
+  services.buzz-acp.codex = {
     enable = true;
     relayUrl = "wss://buzz.example.com";
     environmentFile = "/run/secrets/buzz-agent.env";
@@ -103,9 +103,63 @@ Apply the configuration and inspect startup:
 
 ```console
 sudo nixos-rebuild switch --flake .#agent-host
-sudo systemctl status buzz-acp
-sudo journalctl -u buzz-acp -f
+sudo systemctl status buzz-acp-codex
+sudo journalctl -u buzz-acp-codex -f
 ```
+
+## Multiple instances and defaults
+
+Each enabled named entry creates `buzz-acp-<name>.service` and, when registration is
+enabled, `buzz-acp-<name>-registration.service`. The `default` entry supplies
+shared options and creates no service. Names start with a letter or digit,
+contain only letters, digits, underscores and hyphens, and cannot end in
+`-registration`, which is reserved for registration units.
+
+```nix
+services.buzz-acp = {
+  default = {
+    enable = true;
+    relayUrl = "wss://buzz.example.com";
+    respondTo = "owner-only";
+    registration.channelAddPolicy = "owner_only";
+  };
+  codex = {
+    environmentFile = "/run/secrets/buzz-codex.env";
+    codexAcp.enable = true;
+  };
+  qwen = {
+    environmentFile = "/run/secrets/buzz-qwen.env";
+    agentCommand = "qwen";
+    agentArgs = "--acp";
+    extraPackages = [ pkgs.qwen-code ];
+  };
+};
+```
+
+Instance values override shared values, including `false`, `null`, and lists.
+Nested settings inherit omitted fields; `extraEnvironment` merges by variable
+name. Set `enable = false` on an instance to disable it when the shared default
+enables agents. Give each instance its own Buzz identity and environment file.
+
+By default, each instance gets a `buzz-agent-<name>` user and group with
+NixOS-allocated IDs, and `/var/lib/buzz-acp-<name>` as its home and working
+directory. Set `uid` and `gid` explicitly when stable numeric IDs are required.
+To retain an existing agent's state, set its previous `user`, `group`, `uid`,
+`gid`, and `stateDir` on the named instance before rebuilding. For an installation
+that used the old module defaults:
+
+```nix
+services.buzz-acp.codex = {
+  user = "buzz-agent";
+  group = "buzz-agent";
+  uid = 6000;
+  gid = 6000;
+  stateDir = "/var/lib/buzz-acp";
+};
+```
+
+Use these settings only for the instance retaining that account and state;
+new instances should have their own directories and accounts.
 
 ## Functional test
 
@@ -148,7 +202,7 @@ The `--role bot` distinction is about authorization. It does not change how the 
 
 A correctly configured harness still has no profile or agent-directory record
 of its own. `buzz-acp` does not publish either record. Enable
-`services.buzz-acp.registration` to publish them before the harness starts.
+`services.buzz-acp.codex.registration` to publish them before the harness starts.
 
 Registration needs an owner attestation before it can publish either record.
 Create the attestation on a machine controlled by the owner; the owner private
@@ -172,7 +226,7 @@ BUZZ_AUTH_TAG='["auth","<owner-public-key>","","<signature>"]'
 Configure the profile and directory policy:
 
 ```nix
-services.buzz-acp.registration = {
+services.buzz-acp.codex.registration = {
   enable = true;
   displayName = "agent-name";
   about = "what this agent is for";
@@ -191,7 +245,7 @@ started:
 
 ```console
 sudo nixos-rebuild switch --flake .#agent-host
-sudo systemctl status buzz-acp-registration buzz-acp
+sudo systemctl status buzz-acp-codex-registration buzz-acp-codex
 ```
 
 The harness log should resolve its owner from the attestation:
@@ -220,7 +274,7 @@ key on the owner's machine; do not add it to the agent's environment file.
 Disable the Codex adapter and provide an ACP-compatible command. Arguments use Buzz's comma-separated format:
 
 ```nix
-services.buzz-acp = {
+services.buzz-acp.codex = {
   enable = true;
   relayUrl = "wss://buzz.example.com";
   environmentFile = "/run/secrets/buzz-agent.env";
@@ -241,7 +295,7 @@ Use `extraPackages` for the adapter and any tools it launches. `extraEnvironment
 The default configuration runs buzz-acp and agents under a unique user id. If you want the agents to access or modify your own files, change the user and group to existing user and group names and set `createUser = false`.
 
 ```nix
-services.buzz-acp = {
+services.buzz-acp.codex = {
   user = "alice";
   group = "users";
   createUser = false;

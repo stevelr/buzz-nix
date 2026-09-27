@@ -174,7 +174,7 @@
               {
                 boot.isContainer = true;
                 system.stateVersion = "26.05";
-                services.buzz-acp = {
+                services.buzz-acp.codex = {
                   enable = true;
                   relayUrl = "wss://relay.example.test";
                   environmentFile = "/run/keys/buzz-agent.env";
@@ -195,7 +195,7 @@
               {
                 boot.isContainer = true;
                 system.stateVersion = "26.05";
-                services.buzz-acp = {
+                services.buzz-acp.claude = {
                   enable = true;
                   relayUrl = "wss://relay.example.test";
                   environmentFile = "/run/keys/buzz-agent.env";
@@ -204,9 +204,79 @@
               }
             ];
           };
+          multiAgent = nixpkgs.lib.nixosSystem {
+            inherit system;
+            modules = [
+              self.nixosModules.buzz-acp
+              {
+                boot.isContainer = true;
+                system.stateVersion = "26.05";
+                services.buzz-acp = {
+                  default = {
+                    enable = true;
+                    relayUrl = "wss://shared.example.test";
+                    environmentFile = "/run/keys/shared.env";
+                    extraEnvironment = {
+                      SHARED = "shared";
+                      OVERRIDE = "shared";
+                    };
+                    extraPackages = [ pkgs.hello ];
+                    registration = {
+                      enable = true;
+                      about = "Shared profile";
+                    };
+                  };
+                  codex = {
+                    codexAcp.enable = true;
+                    environmentFile = "/run/keys/codex.env";
+                    registration.displayName = "Codex";
+                    extraEnvironment.OVERRIDE = "codex";
+                  };
+                  qwen = {
+                    agentCommand = "qwen";
+                    agentArgs = "--acp";
+                    registration.enable = false;
+                    registration.about = null;
+                    extraPackages = [ ];
+                    extraEnvironment.QWEN = "yes";
+                  };
+                  disabled.enable = false;
+                };
+              }
+            ];
+          };
+          defaultsOnly = nixpkgs.lib.nixosSystem {
+            inherit system;
+            modules = [
+              self.nixosModules.buzz-acp
+              {
+                services.buzz-acp.default.enable = true;
+              }
+            ];
+          };
+          invalidAgent =
+            settings:
+            nixpkgs.lib.nixosSystem {
+              inherit system;
+              modules = [
+                self.nixosModules.buzz-acp
+                {
+                  services.buzz-acp.bad = {
+                    enable = true;
+                    environmentFile = "/run/keys/agent.env";
+                  }
+                  // settings;
+                }
+              ];
+            };
+          rejects =
+            settings:
+            builtins.any (
+              a: !a.assertion && nixpkgs.lib.hasPrefix "services.buzz-acp.bad." a.message
+            ) (invalidAgent settings).config.assertions;
           ferronConfig = pkgs.writeText "buzz-relay-ferron.conf" directRelay.config.services.buzz-relay.ferron.configText;
           registrationScript =
-            codexAgent.config.systemd.services.buzz-acp-registration.serviceConfig.ExecStart;
+            codexAgent.config.systemd.services.buzz-acp-codex-registration.serviceConfig.ExecStart;
         in
         {
           ferron-config =
@@ -218,6 +288,47 @@
                 ferron validate -c ${ferronConfig}
                 touch "$out"
               '';
+
+          acp-instances =
+            let
+              services = multiAgent.config.systemd.services;
+              codex = services.buzz-acp-codex;
+              qwen = services.buzz-acp-qwen;
+              instances = multiAgent.config.services.buzz-acp;
+            in
+            assert builtins.seq multiAgent.config.system.build.toplevel.drvPath true;
+            assert !(services ? buzz-acp-default);
+            assert !(services ? buzz-acp-disabled);
+            assert !(services ? buzz-acp-qwen-registration);
+            assert !(defaultsOnly.config.systemd.services ? buzz-acp-default);
+            assert codex.environment.BUZZ_RELAY_URL == "wss://shared.example.test";
+            assert qwen.serviceConfig.EnvironmentFile == "/run/keys/shared.env";
+            assert codex.serviceConfig.EnvironmentFile == "/run/keys/codex.env";
+            assert codex.environment.SHARED == "shared";
+            assert codex.environment.OVERRIDE == "codex";
+            assert qwen.environment.OVERRIDE == "shared";
+            assert qwen.environment.QWEN == "yes";
+            assert qwen.environment.BUZZ_ACP_AGENT_COMMAND == "qwen";
+            assert qwen.environment.BUZZ_ACP_AGENT_ARGS == "--acp";
+            assert instances.codex.registration.about == "Shared profile";
+            assert instances.qwen.registration.about == null;
+            assert instances.qwen.extraPackages == [ ];
+            assert instances.codex.extraPackages == [ pkgs.hello ];
+            assert instances.codex.user != instances.qwen.user;
+            assert instances.codex.stateDir != instances.qwen.stateDir;
+            assert instances.codex.uid == null && instances.qwen.uid == null;
+            assert codex.requires == [ "buzz-acp-codex-registration.service" ];
+            assert services.buzz-acp-codex-registration.before == [ "buzz-acp-codex.service" ];
+            assert services.buzz-acp-codex-registration.serviceConfig.EnvironmentFile == "/run/keys/codex.env";
+            assert !rejects { };
+            assert rejects { environmentFile = null; };
+            assert rejects { environmentFile = "relative.env"; };
+            assert rejects { relayUrl = "https://invalid.test"; };
+            assert rejects {
+              codexAcp.enable = true;
+              claudeAcp.enable = true;
+            };
+            pkgs.runCommand "buzz-acp-instances" { } "touch $out";
 
           module-evaluation =
             assert builtins.seq directRelay.config.system.build.toplevel.drvPath true;
@@ -239,19 +350,19 @@
             assert !(hostRelay.config.containers.buzz-relay.config.boot.kernel.sysctl ? "vm.overcommit_memory");
             assert !(directRelay.config.boot.kernel.sysctl ? "vm.overcommit_memory");
             assert !(containerRelay.config.boot.kernel.sysctl ? "vm.overcommit_memory");
-            assert codexAgent.config.systemd.services ? buzz-acp;
-            assert codexAgent.config.systemd.services ? buzz-acp-registration;
-            assert builtins.elem "buzz-acp-registration.service"
-              codexAgent.config.systemd.services.buzz-acp.requires;
+            assert codexAgent.config.systemd.services ? buzz-acp-codex;
+            assert codexAgent.config.systemd.services ? buzz-acp-codex-registration;
+            assert builtins.elem "buzz-acp-codex-registration.service"
+              codexAgent.config.systemd.services.buzz-acp-codex.requires;
             assert
-              codexAgent.config.systemd.services.buzz-acp-registration.environment.BUZZ_RELAY_URL
+              codexAgent.config.systemd.services.buzz-acp-codex-registration.environment.BUZZ_RELAY_URL
               == "wss://relay.example.test";
             assert
-              codexAgent.config.systemd.services.buzz-acp-registration.serviceConfig.EnvironmentFile
+              codexAgent.config.systemd.services.buzz-acp-codex-registration.serviceConfig.EnvironmentFile
               == "/run/keys/buzz-agent.env";
-            assert !(claudeAgent.config.systemd.services ? buzz-acp-registration);
+            assert !(claudeAgent.config.systemd.services ? buzz-acp-claude-registration);
             assert
-              claudeAgent.config.systemd.services.buzz-acp.environment.BUZZ_ACP_AGENT_COMMAND
+              claudeAgent.config.systemd.services.buzz-acp-claude.environment.BUZZ_ACP_AGENT_COMMAND
               == "${llm-agents.packages.${system}.claude-agent-acp}/bin/claude-agent-acp";
             pkgs.runCommand "buzz-nixos-module-evaluation" { } ''
               grep -F 'BUZZ_AUTH_TAG' ${registrationScript}
